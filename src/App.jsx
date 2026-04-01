@@ -16,6 +16,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "./lib/supabase";
+import krEtfsData from "./data/kr_etfs.json";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. 상수 / 데이터 정의
@@ -1258,18 +1259,25 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
     const next = [...items];
     const item = { ...next[idx], [field]: val };
 
-    // 수기 입력 모드: 자동 매핑 로직 제거
-    if (field === "ticker") {
-      item.ticker = val;
-    } else if (field === "name") {
-      item.name = val;
+    // 자동 매핑 로직: 종목명을 선택했을 때 티커와 자산군 자동 입력
+    if (field === "name") {
+      const matched = krEtfs.find(e => e.name === val);
+      if (matched) {
+        item.ticker = matched.ticker;
+        item.assetClass = matched.assetClass;
+      }
+    } else if (field === "ticker") {
+      const matched = krEtfs.find(e => e.ticker === val);
+      if (matched) {
+        item.name = matched.name;
+        item.assetClass = matched.assetClass;
+      }
     }
 
-    // 자동 계산 로직 (매수가 제거됨)
+    // 자동 계산 로직
     const q = Number(item.quantity) || 0;
     const cp = Number(item.currentPrice) || 0;
 
-    // 평가금액은 여전히 자동 계산 (주식수 * 현재가)
     if (cp > 0) {
       item.amount = q * cp;
     }
@@ -1320,10 +1328,10 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
               {items.map((item, i) => (
                 <tr key={i} style={{borderBottom:"1px solid var(--color-border-tertiary)",background:i%2===1?"#fafbfc":"#fff"}}>
                   <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input value={item.ticker} onChange={e => updateItem(i, "ticker", e.target.value)} placeholder="069500" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",fontFamily:"monospace",outline:"none"}} />
+                    <input list="ticker-datalist" value={item.ticker} onChange={e => updateItem(i, "ticker", e.target.value)} placeholder="069500" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",fontFamily:"monospace",outline:"none"}} />
                   </td>
                   <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input value={item.name} onChange={e => updateItem(i, "name", e.target.value)} placeholder="종목명 입력" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none"}} />
+                    <input list="name-datalist" value={item.name} onChange={e => updateItem(i, "name", e.target.value)} placeholder="종목이름 입력(예: KODEX 200)" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none"}} />
                   </td>
                   <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
                     <select value={item.assetClass} onChange={e => updateItem(i, "assetClass", e.target.value)} style={{width:"100%",padding:"10px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none",cursor:"pointer"}}>
@@ -1368,6 +1376,12 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
         </div>
         <div>'저장' 버튼을 누르면 <strong>{saveDate}</strong> 날짜의 데이터가 현재 입력된 내용으로 클라우드 DB에 동기화됩니다.</div>
       </div>
+      <datalist id="ticker-datalist">
+        {krEtfs.map(e => <option key={e.ticker} value={e.ticker}>{e.name}</option>)}
+      </datalist>
+      <datalist id="name-datalist">
+        {krEtfs.map(e => <option key={e.ticker} value={e.name}>{e.ticker}</option>)}
+      </datalist>
     </div>
   );
 }
@@ -1400,6 +1414,14 @@ export default function PensionPilot(){
   const [user, setUser] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ETF 데이터 초기화
+  useEffect(() => {
+    setKrEtfs(krEtfsData);
+    const map = {};
+    krEtfsData.forEach(e => { map[e.name] = e; });
+    setTickerMap(map);
+  }, []);
 
   const confirmAction = (title, message, onConfirm) => {
     setModal({ isOpen: true, title, message, onConfirm });
