@@ -1307,6 +1307,10 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
           </div>
         </div>
 
+        <div style={{ background: "var(--color-background-secondary)", padding: "12px 16px", borderRadius: 8, marginBottom: "1.5rem", borderLeft: "4px solid #185fa5", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6 }}>
+          <strong style={{ color: "#185fa5" }}>💡 입력 팁:</strong> 목록에 없는 종목이나 티커는 <strong>직접 타이핑하여 입력</strong>하시면 됩니다. 한 번 저장된 종목은 다음번 입력 시 자동으로 추천 목록에 나타납니다.
+        </div>
+
         <div style={{overflowX:"auto",margin:"0 -4px",border:"1px solid var(--color-border-tertiary)",borderRadius:8}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1000}}>
             <thead>
@@ -1486,9 +1490,29 @@ export default function PensionPilot(){
           quantity: it.quantity,
           currentPrice: it.current_price,
           amount: it.amount,
-          costAmt: it.cost_amt
+          cost_amt: it.cost_amt
         }))
       });
+
+      // 개인화된 티커 사전 업데이트: 기본 데이터 + 현재 유저의 보유 종목 합치기
+      const userTickers = (holdings || []).map(h => ({
+        name: h.name,
+        ticker: h.ticker,
+        assetClass: h.asset_class
+      }));
+      setKrEtfs(() => {
+        const combined = [...krEtfsData, ...userTickers];
+        const unique = [];
+        const seen = new Set();
+        combined.forEach(item => {
+          if (item.ticker && !seen.has(item.ticker)) {
+            seen.add(item.ticker);
+            unique.push(item);
+          }
+        });
+        return unique;
+      });
+
       setIsDemo(false);
     } catch (e) {
       console.error("Load Error:", e.message);
