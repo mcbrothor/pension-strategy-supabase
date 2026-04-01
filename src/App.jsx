@@ -1477,22 +1477,35 @@ export default function PensionPilot(){
 
   // 2. 인증 관련 핸들러
   async function handleLogin(email, password) {
+    if (!email || !password) return alert("이메일과 비밀번호를 입력해 주세요.");
     try {
+      setIsSaving(true);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      alert("로그인 성공!");
+      if (error) {
+        if (error.message.includes("Email not confirmed")) throw new Error("이메일 인증이 완료되지 않았습니다. 메일함을 확인해 주세요.");
+        throw error;
+      }
     } catch (e) {
       alert("로그인 실패: " + e.message);
+    } finally {
+      setIsSaving(false);
     }
   }
 
   async function handleSignUp(email, password) {
+    if (!email || !password) return alert("이메일과 비밀번호를 모두 입력해 주세요.");
     try {
+      setIsSaving(true);
       const { error } = await supabase.auth.signUp({ email, password });
-      if (error) throw error;
-      alert("회원가입 신청 성공! 메일함을 확인해 주세요.");
+      if (error) {
+        if (error.status === 429) throw new Error("너무 많은 요청이 발생했습니다. 잠시 후(약 1시간 뒤) 다시 시도해 주세요.");
+        throw error;
+      }
+      alert("회원가입 신청 성공! 입력하신 메일함(" + email + ")을 확인하여 인증을 완료해 주세요.");
     } catch (e) {
       alert("회원가입 실패: " + e.message);
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -1724,7 +1737,7 @@ export default function PensionPilot(){
     setIsSaving(false);
   }
 
-function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
+function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
   const [isSign, setIsSign] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1759,8 +1772,8 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
           onChange={e => setPassword(e.target.value)}
           style={{ padding: "10px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} 
         />
-        <Btn primary onClick={() => isSign ? onSignUp(email, password) : onLogin(email, password)}>
-          {isSign ? "가입하기" : "로그인"}
+        <Btn primary onClick={() => isSign ? onSignUp(email, password) : onLogin(email, password)} disabled={isSaving}>
+          {isSaving ? "처리 중..." : (isSign ? "가입하기" : "로그인")}
         </Btn>
         <div style={{ textAlign: "center", marginTop: 10 }}>
           <button 
@@ -1839,6 +1852,7 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
             onLogin={handleLogin} 
             onSignUp={handleSignUp} 
             onLogout={handleLogout} 
+            isSaving={isSaving}
           />
         )}
       </div>
