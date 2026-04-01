@@ -1232,9 +1232,8 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
   const addItem = () => setItems([...items, { ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
 
-  // 실시간 시세 동기화 함수 (서버리스 엔드포인트 활용)
+  // 실시간 시세 동기화 함수 (야후 파이낸스 병렬 조회)
   async function syncPrices() {
-    // 유효한 티커 필터링
     const tickers = items
       .map(it => String(it.ticker).trim())
       .filter(t => t && t.length >= 2); 
@@ -1242,12 +1241,50 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
     if (tickers.length === 0) return alert("시세를 조회할 티커(종목코드)가 없습니다.");
 
     setIsFetching(true);
+    let successCount = 0;
     try {
-      // 서버리스 API를 통한 시세 조회 시도
-      const res = await fetch("/api/vix"); // 현재 VIX API가 가격 정보를 일부 포함하거나 확장될 것을 가정
-      // 만약 별도의 price API가 있다면 해당 경로를 사용합니다.
-      // 여기서는 데모 또는 확장 가능성을 위해 구조만 유지합니다.
-      alert("현재가 동기화 기능은 준비 중입니다. (서버리스 엔드포인트 구성 필요)");
+      const results = await Promise.all(tickers.map(async (ticker) => {
+        try {
+          // 한국 종목(6자리 숫자)인 경우 .KS 접미사 시도
+          const isKR = ticker.length === 6 && /^\d+$/.test(ticker);
+          const symbol = isKR ? ticker + ".KS" : ticker;
+          
+          const yahooUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`);
+          const res = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
+          
+          if (res.ok) {
+            const wrapper = await res.json();
+            const d = JSON.parse(wrapper.contents);
+            const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+            
+            if (typeof price === "number" && price > 0) {
+              successCount++;
+              return { ticker, price };
+            }
+          }
+        } catch (e) {
+          console.warn(`${ticker} 시세 조회 실패:`, e.message);
+        }
+        return null;
+      }));
+
+      const priceMap = {};
+      results.forEach(r => { if (r) priceMap[r.ticker] = r.price; });
+
+      setItems(prev => prev.map(it => {
+        const p = priceMap[it.ticker];
+        if (p) {
+          const q = Number(it.quantity) || 0;
+          return { ...it, currentPrice: p, amount: q * p };
+        }
+        return it;
+      }));
+
+      if (successCount > 0) {
+        alert(`총 ${successCount}개 항목의 현재가를 성공적으로 동기화했습니다.`);
+      } else {
+        alert("시세를 불러오는 데 실패했습니다. 티커가 정확한지 확인해 주세요.");
+      }
     } catch (e) {
       console.error("Sync Error:", e);
       alert("시세 동기화 중 오류가 발생했습니다.");
