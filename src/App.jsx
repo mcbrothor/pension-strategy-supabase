@@ -858,339 +858,7 @@ function RetirementRoadmap({strategyId}){
   );
 }
 
-// ─── 4-5. 시트 연동 ─────────────────────────────────────────────────────────
-function SheetSetup({ onConnect, currentUrl, isDemo }) {
-  const [url, setUrl] = useState(currentUrl || "");
-  const [status, setStatus] = useState("");
-  const [health, setHealth] = useState({ running: false, items: [] });
-  const [showHelp, setShowHelp] = useState({});
-  const [topHint, setTopHint] = useState(null);
-  const [isEditing, setIsEditing] = useState(!currentUrl);
-
-  // 현재 연결된 URL이 바뀌면 로컬 상태도 동기화
-  useEffect(() => {
-    if (currentUrl && !isEditing) setUrl(currentUrl);
-  }, [currentUrl]);
-
-  const pill=(ok,label,sub)=>(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:".75rem 1rem",borderRadius:"var(--border-radius-md)",background:ok===true?"#eaf3de":ok===false?"#fcebeb":"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
-      <div>
-        <div style={{fontSize:12,fontWeight:600,color:ok===true?"#27500a":ok===false?"#791f1f":"var(--color-text-primary)"}}>{label}</div>
-        {sub&&<div style={{fontSize:11,color:"var(--color-text-secondary)",marginTop:2,lineHeight:1.5}}>{sub}</div>}
-      </div>
-      <Badge c={ok===true?"#27500a":ok===false?"#791f1f":"var(--color-text-secondary)"} bg={ok===true?"#eaf3de":ok===false?"#fcebeb":"var(--color-background-secondary)"}>
-        {ok===true?"OK":ok===false?"FAIL":"…"}
-      </Badge>
-    </div>
-  );
-
-  function normalizeExecUrl(input){
-    const s = (input||"").trim();
-    if(!s) return "";
-    // 편의: /exec 누락 또는 /dev, /edit 등의 URL을 /exec 형태로 최대한 보정
-    if (s.includes("script.google.com/macros/")) {
-      if (s.includes("/exec")) return s.split("?")[0];
-      if (s.includes("/dev")) return s.replace("/dev","/exec").split("?")[0];
-      if (s.includes("/edit")) return s.replace(/\/edit.*$/,"/exec");
-      // 마지막 세그먼트가 /s/{ID} 형태면 /exec를 붙여줌
-      if (s.endsWith("/")) return s + "exec";
-      return s + "/exec";
-    }
-    return s;
-  }
-
-  function helpFor(id){
-    const commonProxy = (
-      <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-        서버리스가 아직 배포되지 않았을 수 있습니다.<br/>
-        - Vercel 기준: 프로젝트 루트에 <strong>`api/`</strong> 폴더가 있어야 하고,<br/>
-        - `api/portfolio.js`, `api/vix.js`, `api/momentum.js`가 배포되어야 합니다.
-      </div>
-    );
-    if(id==="vix") return (
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {commonProxy}
-        <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-          VIX는 무료 소스(Stooq) 기반입니다. `/api/vix`가 배포되면 API 키 없이 동작합니다.
-        </div>
-      </div>
-    );
-    if(id==="momentum") return (
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {commonProxy}
-        <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-          모멘텀은 기본적으로 Stooq 월말 시세(근사)로 계산합니다. `/api/momentum`가 POST를 받아야 합니다.
-        </div>
-      </div>
-    );
-    if(id==="portfolio") return (
-      <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-        `/api/portfolio`가 실패해도 앱은 Apps Script URL로 직접 호출 폴백을 시도합니다.<br/>
-        다만 CORS/안정성 때문에 프록시 배포를 권장합니다.
-      </div>
-    );
-    if(id==="gas") return (
-      <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-        Apps Script 배포 설정을 확인하세요:<br/>
-        - 배포 → 웹앱 → <strong>액세스: 모든 사용자</strong><br/>
-        - URL이 반드시 <strong>`.../exec`</strong> 로 끝나야 합니다(아래 “URL 보정” 버튼 사용 가능)
-      </div>
-    );
-    return null;
-  }
-
-  async function runHealthCheck(sheetUrl){
-    setHealth({running:true,items:[]});
-    const items=[];
-    let hint = null;
-
-    // 1) /api/vix (무료 소스)
-    try{
-      const r=await fetch("/api/vix?_="+Date.now());
-      const d=await r.json().catch(()=>null);
-      const ok=!!(r.ok && d && d.ok && typeof d.vix==="number" && Number.isFinite(d.vix));
-      items.push({id:"vix",ok,label:"VIX 엔드포인트 (/api/vix)",sub:ok?`VIX=${d.vix.toFixed(2)} (updatedAt: ${d.updatedAt||"n/a"})`:"서버리스 미배포/응답 형식 오류 가능"});
-    }catch(e){
-      items.push({id:"vix",ok:false,label:"VIX 엔드포인트 (/api/vix)",sub:"요청 실패(네트워크/서버리스 미배포 가능)"});
-    }
-
-    // 2) /api/momentum (무료 소스 + 근사 계산)
-    try{
-      const r=await fetch("/api/momentum",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({strategyId:"gtaa5",asOf:new Date().toISOString(),benchmark:{},assetHoldings:[]})
-      });
-      const d=await r.json().catch(()=>null);
-      const ok=!!(r.ok && d && d.ok && d.targets && typeof d.targets==="object");
-      items.push({id:"momentum",ok,label:"모멘텀 엔드포인트 (/api/momentum)",sub:ok?`mode=${d.mode||"n/a"} · updatedAt=${d.updatedAt||"n/a"}`:"서버리스 미배포/POST 미지원/응답 형식 오류 가능"});
-    }catch(e){
-      items.push({id:"momentum",ok:false,label:"모멘텀 엔드포인트 (/api/momentum)",sub:"요청 실패(네트워크/서버리스 미배포 가능)"});
-    }
-
-    // 3) GAS 직접 연결(프록시가 안 될 때도 동작해야 함)
-    if(sheetUrl){
-      try{
-        const r=await fetch(sheetUrl+"?_="+Date.now());
-        const d=await r.json().catch(()=>null);
-        const ok=!!(r.ok && d && (d.ok===true || d.total!=null));
-        items.push({id:"gas",ok,label:"Apps Script 직접 연결",sub:ok?`version=${d.version||"n/a"} · updated=${d.updated||"n/a"}`:"배포 URL/액세스(모든 사용자) 설정을 확인"});
-        if(!ok && !hint) hint = {level:"danger",title:"Apps Script 응답이 정상 형식이 아닙니다.",body:"배포 URL이 .../exec 인지, 그리고 배포의 액세스가 “모든 사용자”인지 먼저 확인하세요."};
-      }catch(e){
-        items.push({id:"gas",ok:false,label:"Apps Script 직접 연결",sub:"요청 실패(배포 URL/권한/CORS 이슈 가능)"});
-        if(!hint) hint = {level:"danger",title:"Apps Script 연결 실패",body:"가장 흔한 원인은 (1) 배포 URL이 /exec가 아님 (2) 액세스가 나만/조직으로 제한됨 입니다. ‘URL 보정’ 후에도 실패하면 배포 설정을 다시 확인하세요."};
-      }
-    }else{
-      items.push({id:"gas",ok:null,label:"Apps Script 직접 연결",sub:"배포 URL을 입력하면 자동 점검합니다."});
-    }
-
-    // 4) /api/portfolio 프록시(권장 경로)
-    if(sheetUrl){
-      try{
-        const proxyUrl = `/api/portfolio?sheetUrl=${encodeURIComponent(sheetUrl)}&_=${Date.now()}`;
-        const r=await fetch(proxyUrl);
-        const d=await r.json().catch(()=>null);
-        const ok=!!(r.ok && d && (d.ok===true || d.total!=null));
-        items.push({id:"portfolio",ok,label:"포트폴리오 프록시 (/api/portfolio)",sub:ok?`version=${d.version||"n/a"} · updated=${d.updated||"n/a"}`:"프록시 미배포 시에도 직접 연결로 폴백됨"});
-        if(!ok && !hint) hint = {level:"warn",title:"/api/portfolio 프록시가 응답하지 않습니다.",body:"서버리스가 미배포일 수 있습니다. 그래도 Apps Script 직접 연결이 OK라면 앱은 동작합니다(다만 안정성을 위해 프록시 배포 권장)."};
-      }catch(e){
-        items.push({id:"portfolio",ok:false,label:"포트폴리오 프록시 (/api/portfolio)",sub:"요청 실패(서버리스 미배포 가능)"});
-        if(!hint) hint = {level:"warn",title:"/api/portfolio 프록시 실패",body:"서버리스 미배포/라우팅 문제일 수 있습니다. 우선 Apps Script 직접 연결이 OK인지 확인하세요."};
-      }
-    }else{
-      items.push({id:"portfolio",ok:null,label:"포트폴리오 프록시 (/api/portfolio)",sub:"배포 URL을 입력하면 자동 점검합니다."});
-    }
-
-    if(!hint){
-      const anyFail = items.some(x=>x.ok===false);
-      hint = anyFail
-        ? {level:"warn",title:"일부 항목이 실패했습니다.",body:"각 FAIL 항목의 ‘해결 방법’을 열어 체크리스트대로 진행해 주세요."}
-        : {level:"ok",title:"환경 점검 통과",body:"이제 시트 URL을 연결하고 대시보드에서 실데이터를 확인하면 됩니다."};
-    }
-
-    setHealth({running:false,items});
-    setTopHint(hint);
-  }
-
-  async function connect(){
-    if(!url.trim()){setStatus("URL을 입력하세요.");return;}
-    const sheetUrl = normalizeExecUrl(url);
-    if (sheetUrl !== url.trim()) setUrl(sheetUrl);
-    setStatus("연결 확인 중...");
-    try{
-      const proxyEndpoint = "/api/portfolio";
-      let d = null;
-      try{
-        const proxyUrl = `${proxyEndpoint}?sheetUrl=${encodeURIComponent(sheetUrl)}&_=${Date.now()}`;
-        const res=await fetch(proxyUrl);
-        if(res.ok) d = await res.json();
-        else throw new Error();
-      }catch(e){
-        const res=await fetch(sheetUrl+"?_="+Date.now());
-        if(!res.ok) throw new Error();
-        d = await res.json();
-      }
-
-      setStatus("연결 성공!");
-      onConnect&&onConnect(d,sheetUrl);
-      setIsEditing(false); // 연결 성공 시 상태 뷰로 전환
-      runHealthCheck(sheetUrl);
-    }catch(e){
-      setStatus("연결 실패. 배포 URL과 액세스 설정을 확인하세요.");
-    }
-  }
-
-  // 연결된 상태 뷰 (Connected Dashboard)
-  const StatusDashboard = (
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      <Card>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:48,height:48,borderRadius:12,background:"#eaf3de",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>✅</div>
-            <div>
-              <div style={{fontSize:16,fontWeight:700,color:"#27500a"}}>구글 시트 연결 활성</div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:2}}>
-                백엔드 DB가 정상적으로 연동되어 실시간 시세 및 저장이 가능합니다.
-              </div>
-            </div>
-          </div>
-          <Btn sm onClick={() => setIsEditing(true)}>환경 설정 변경</Btn>
-        </div>
-        
-        <div style={{marginTop:"1.5rem",padding:"1rem",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)"}}>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:8,fontWeight:600}}>연결된 Apps Script URL</div>
-          <div style={{fontSize:13,fontFamily:"monospace",wordBreak:"break-all",color:"var(--color-text-primary)"}}>
-            {currentUrl ? `${currentUrl.substring(0,35)}...${currentUrl.substring(currentUrl.length-15)}` : "연결된 URL 없음"}
-          </div>
-        </div>
-      </Card>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <Card style={{marginBottom:0}}>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>데이터 동기화</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-              <span style={{color:"var(--color-text-secondary)"}}>최근 동기화</span>
-              <span style={{fontWeight:500}}>방금 전</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-              <span style={{color:"var(--color-text-secondary)"}}>자동 완성 엔진</span>
-              <Badge bg="#eaf3de" c="#27500a">활성 (KRX)</Badge>
-            </div>
-          </div>
-        </Card>
-        <Card style={{marginBottom:0}}>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>백엔드 시세 엔진</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-              <span style={{color:"var(--color-text-secondary)"}}>VIX 정보 원천</span>
-              <span style={{fontWeight:500}}>Stooq Realtime</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-              <span style={{color:"var(--color-text-secondary)"}}>ETF 시세 원천</span>
-              <span style={{fontWeight:500}}>Naver Finance</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-      
-      <Btn block onClick={() => runHealthCheck(currentUrl)} style={{height:44,fontSize:13}}>시스템 헬스 체크 실행 (Diagnostic)</Btn>
-    </div>
-  );
-
-  return(
-    <div>
-      {!isEditing && currentUrl ? StatusDashboard : (
-        <>
-          <Card>
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>초기 설정 마법사</div>
-                <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.7}}>
-                  아래 순서대로 진행하면 막힘 없이 연결됩니다. (구글 시트 Code_v3.gs 기반)
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                {currentUrl && <Btn sm onClick={() => setIsEditing(false)}>돌아가기</Btn>}
-                <Btn sm onClick={()=>runHealthCheck(url.trim()||"")} primary={health.running}>{health.running?"점검 중…":"환경 점검"}</Btn>
-              </div>
-            </div>
-            {topHint&&(
-              <div style={{marginTop:"1rem"}}>
-                <ReasonBox
-                  type={topHint.level==="ok"?"ok":topHint.level==="danger"?"danger":"warn"}
-                  title={topHint.title}
-                  body={topHint.body}
-                />
-              </div>
-            )}
-            <div style={{marginTop:"1rem",display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
-              <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:".875rem"}}>
-                <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>1) 시트 초기화</div>
-                <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-                  Apps Script에서 <strong>`initSheets()`</strong> 1회 실행 → 탭 4개 자동 생성
-                </div>
-              </div>
-              <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:".875rem"}}>
-                <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>2) 웹앱 배포</div>
-                <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-                  배포 → 웹앱 → 액세스 <strong>모든 사용자</strong> → URL 복사
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>Apps Script 배포 URL 입력</div>
-            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:"1rem"}}>구글 시트에 Code_v3.gs를 설치하고 웹앱으로 배포한 후 URL을 입력하세요.</div>
-            <div style={{display:"flex",gap:8}}>
-              <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" style={{flex:1,padding:"8px 12px",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}/>
-              <Btn sm onClick={()=>setUrl(normalizeExecUrl(url))}>URL 보정</Btn>
-              <Btn primary onClick={connect}>연결 저장</Btn>
-            </div>
-            {status&&<div style={{fontSize:12,marginTop:6,color:status.includes("성공")?"#27500a":status.includes("실패")?"#a32d2d":"var(--color-text-secondary)"}}>{status}</div>}
-          </Card>
-        </>
-      )}
-
-      {/* 헬스 체크 결과는 항상 하단에 위치 가능 (실행 시에만) */}
-      {(health.items.length > 0 || health.running) && (
-        <Card>
-          <ST>시스템 헬스 체크 결과</ST>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {health.items.map(it=>(
-              <div key={it.id}>
-                {pill(it.ok,it.label,it.sub)}
-                <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:6}}>
-                  {it.ok===false && <Btn sm onClick={()=>setShowHelp(p=>({...p,[it.id]:!p[it.id]}))}>{showHelp[it.id]?"도움말 닫기":"해결 방법"}</Btn>}
-                  <Btn sm onClick={()=>runHealthCheck(normalizeExecUrl(url)||"")}>재시도</Btn>
-                </div>
-                {it.ok===false && showHelp[it.id] && (
-                  <div style={{marginTop:8,background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:".875rem",border:"0.5px solid var(--color-border-tertiary)"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>가능한 원인 / 해결</div>
-                    {helpFor(it.id)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      <Card style={{marginBottom:0}}>
-        <ST>백엔드 인프라 요약 (Code_v3.gs)</ST>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[["[종목 입력]","데이터 영구 저장 및 자동 집계."],["[자산군별 잔고]","실시간 수익률 및 비중 추적."],["[히스토리]","시계열 성과 지표 DB."],["[투자전략설정]","리스크 관리 및 전략 파라미터."]].map(([t,d])=>(
-            <div key={t} style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:".875rem"}}>
-              <div style={{fontSize:12,fontWeight:500,marginBottom:5}}>{t}</div>
-              <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6}}>{d}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
+// SheetSetup 컴포넌트 삭제됨 (AuthSetup으로 대체)
 
 // ─── 4-6. 월간 리포트 ───────────────────────────────────────────────────────
 function MonthlyReport({portfolio,vix,strategy}){
@@ -1534,6 +1202,7 @@ function HistoryPanel({portfolio}){
 function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confirmAction }) {
   const [items, setItems] = useState([]);
   const [saveDate, setSaveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
     if (latestTickers && latestTickers.length > 0) {
@@ -1554,13 +1223,8 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
   const addItem = () => setItems([...items, { ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
 
-  // 실시간 시세 동기화 함수 (CORS 무관한 GET 방식으로 개편)
+  // 실시간 시세 동기화 함수 (서버리스 엔드포인트 활용)
   async function syncPrices() {
-    if (!sheetUrl) {
-      console.warn("시세 동기화 중단: sheetUrl이 설정되지 않았습니다.");
-      return alert("시트 연동 탭에서 먼저 Apps Script URL을 설정해 주세요.\n(연동된 시트가 없으면 현재가 동기화 기능을 사용할 수 없습니다.)");
-    }
-    
     // 유효한 티커 필터링
     const tickers = items
       .map(it => String(it.ticker).trim())
@@ -1570,40 +1234,14 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
 
     setIsFetching(true);
     try {
-      // 1. GAS 직접 호출 (GET 방식 활용)
-      const qp = new URLSearchParams({
-        command: "fetchPrices",
-        tickers: tickers.join(",")
-      }).toString();
-      
-      const fetchUrl = `${sheetUrl}${sheetUrl.includes("?") ? "&" : "?"}${qp}`;
-      console.log("시세 동기화 시작:", fetchUrl);
-      const res = await fetch(fetchUrl);
-      
-      if (!res.ok) throw new Error(`서버 응답 오류 (HTTP ${res.status})`);
-      
-      const d = await res.json();
-      console.log("시세 동기화 성공:", d);
-      
-      if (d && d.ok && d.prices) {
-        setItems(prev => prev.map(it => {
-          const price = d.prices[it.ticker];
-          if (price !== undefined) {
-            const q = Number(it.quantity) || 0;
-            return {
-              ...it,
-              currentPrice: price,
-              amount: q * price
-            };
-          }
-          return it;
-        }));
-      } else {
-        alert("시세를 가져오지 못했습니다. 앱스 스크립트를 '새 배포' 했는지 확인해 주세요.");
-      }
+      // 서버리스 API를 통한 시세 조회 시도
+      const res = await fetch("/api/vix"); // 현재 VIX API가 가격 정보를 일부 포함하거나 확장될 것을 가정
+      // 만약 별도의 price API가 있다면 해당 경로를 사용합니다.
+      // 여기서는 데모 또는 확장 가능성을 위해 구조만 유지합니다.
+      alert("현재가 동기화 기능은 준비 중입니다. (서버리스 엔드포인트 구성 필요)");
     } catch (e) {
-      console.error("Sync Error 상세:", e);
-      alert("시세 동기화 중 오류가 발생했습니다: " + e.message);
+      console.error("Sync Error:", e);
+      alert("시세 동기화 중 오류가 발생했습니다.");
     }
     setIsFetching(false);
   }
@@ -1720,7 +1358,7 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
             <div style={{fontSize:22,fontWeight:700,color:"var(--color-text-primary)",marginTop:2}}>{fmt(totalAmt)}원</div>
           </div>
           <div style={{display:"flex",gap:12}}>
-            <Btn primary onClick={() => onSave(items, saveDate)} style={{minWidth:160,height:48,fontSize:14,borderRadius:10,boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>{isSaving ? "처리 중..." : "구글 시트에 저장 ↗"}</Btn>
+            <Btn primary onClick={() => onSave(items, saveDate)} style={{minWidth:160,height:48,fontSize:14,borderRadius:10,boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>{isSaving ? "데이터베이스에 저장 중..." : "데이터베이스에 저장 ↗"}</Btn>
           </div>
         </div>
       </Card>
@@ -1728,7 +1366,7 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
         <div style={{fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:16}}>⚠️</span> 주의 사항
         </div>
-        <div>'구글 시트 저장' 버튼을 누르면 <strong>{saveDate}</strong> 날짜의 기존 데이터가 현재 입력된 내용으로 교체됩니다.</div>
+        <div>'저장' 버튼을 누르면 <strong>{saveDate}</strong> 날짜의 데이터가 현재 입력된 내용으로 클라우드 DB에 동기화됩니다.</div>
       </div>
     </div>
   );
@@ -1746,7 +1384,7 @@ const TABS=[
   {id:"compare",      label:"비중 비교"},
   {id:"history",      label:"변동 추이"},
   {id:"report",       label:"월간 리포트"},
-  {id:"setup",        label:"계정 설정"},
+  {id:"account",      label:"계정 설정"},
 ];
 
 export default function PensionPilot(){
@@ -1759,52 +1397,134 @@ export default function PensionPilot(){
   const [tickerMap, setTickerMap] = useState({}); // 티커-자산군 매핑 데이터
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
+  const [user, setUser] = useState(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
   const confirmAction = (title, message, onConfirm) => {
     setModal({ isOpen: true, title, message, onConfirm });
   };
 
-  // VIX 실시간 지수 직접 조회 (Yahoo Finance + AllOrigins 조합으로 안정성 강화)
+  // 1. Supabase 데이터 로드 함수
+  async function loadPortfolio() {
+    if (!user) return;
+    try {
+      setIsFetching(true);
+      // 포트폴리오 메인 정보 (Holdings)
+      const { data: holdings, error: hErr } = await supabase
+        .from("holdings")
+        .select("*")
+        .eq("user_id", user.id);
+      if (hErr) throw hErr;
+
+      // 설정 정보 (Config)
+      const { data: configs, error: cErr } = await supabase
+        .from("config")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+      if (cErr && cErr.code !== "PGRST116") throw cErr;
+
+      // 스냅샷 정보 (Snapshots)
+      const { data: snapshots, error: sErr } = await supabase
+        .from("snapshots")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("date", { ascending: true });
+      if (sErr) throw sErr;
+
+      // 상태 병합 (holdings 필드 매핑)
+      const mappedHoldings = (holdings || []).map(it => ({
+        etf: it.name,
+        code: it.ticker,
+        cls: it.asset_class,
+        target: 0, // 기본값 (전략에 따라 나중에 계산됨)
+        amt: Number(it.amount) || 0,
+        costAmt: Number(it.cost_amt) || 0,
+        cur: 0 // 계산 전
+      }));
+
+      const total = mappedHoldings.reduce((sum, h) => sum + h.amt, 0);
+
+      setPortfolio({
+        ...DEMO_PORTFOLIO,
+        strategy: configs?.strategy_id || "allseason",
+        total: total,
+        holdings: mappedHoldings,
+        history: (snapshots || []).map(s => ({
+          date: s.date,
+          total: s.total_amt,
+          strategy: s.strategy_id,
+          weights: s.weights
+        })),
+        latestTickers: (holdings || []).map(it => ({
+          ticker: it.ticker,
+          name: it.name,
+          assetClass: it.asset_class,
+          quantity: it.quantity,
+          currentPrice: it.current_price,
+          amount: it.amount,
+          costAmt: it.cost_amt
+        }))
+      });
+      setIsDemo(false);
+    } catch (e) {
+      console.error("Load Error:", e.message);
+    } finally {
+      setIsFetching(false);
+    }
+  }
+
+  // 2. 인증 관련 핸들러
+  async function handleLogin(email, password) {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      alert("로그인 성공!");
+    } catch (e) {
+      alert("로그인 실패: " + e.message);
+    }
+  }
+
+  async function handleSignUp(email, password) {
+    try {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      alert("회원가입 신청 성공! 메일함을 확인해 주세요.");
+    } catch (e) {
+      alert("회원가입 실패: " + e.message);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setPortfolio(DEMO_PORTFOLIO);
+    setIsDemo(true);
+    setTab("dashboard");
+  }
+
+  // VIX 실시간 지수 직접 조회
   async function fetchVix() {
     setVixLoading(true);
     try {
-      // 1. [NEW] UI 직접 조회 (Yahoo Finance API 활용)
-      // %5EVIX는 ^VIX의 인코딩 값입니다.
       const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX');
       const directRes = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
-      
       if (directRes.ok) {
         const wrapper = await directRes.json();
         const d = JSON.parse(wrapper.contents);
-        // Yahoo Finance v8 chart API 구조: chart.result[0].meta.regularMarketPrice
         const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        
         if (typeof val === "number" && val > 0) {
-          console.log("VIX 직접 조회 성공 (Yahoo):", val);
           setVix(val);
           setVixLoading(false);
           return;
         }
       }
-
-      // 2. 폴백: 연결된 시트 백엔드에서 가져오기
-      if (sheetUrl) {
-        const res = await fetch(sheetUrl + (sheetUrl.includes("?") ? "&" : "?") + "_=" + Date.now());
-        if (res.ok) {
-          const d = await res.json();
-          if (d && d.vix) {
-            setVix(Number(d.vix));
-            setVixLoading(false);
-            return;
-          }
-        }
-      }
-
-      // 3. 폴백: 기존 서버리스 API (/api/vix)
       const res = await fetch("/api/vix");
       const d = await res.json();
       if (d && typeof d.vix === "number" && Number.isFinite(d.vix)) setVix(d.vix);
     } catch (e) {
-      console.warn("VIX 직접 조회 중단 (Yahoo/Proxy 이슈):", e.message);
+      console.warn("VIX 조회 실패:", e.message);
     }
     setVixLoading(false);
   }
@@ -1935,9 +1655,6 @@ export default function PensionPilot(){
     );
   }
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [sheetUrl, setSheetUrl] = useState("");
-
   async function handleSaveEntries(items, date) {
     if (!user) {
       alert("로그인이 필요합니다. [계정 설정] 탭에서 로그인해 주세요.");
@@ -2058,29 +1775,25 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
   );
 }
 
-  // Persistence: 앱 로드 시 자동 연결 및 VIX 갱신
+  // 앱 로드 및 인증 상태 감지
   useEffect(() => {
-    const savedUrl = localStorage.getItem("pension_sheet_url");
-    if (savedUrl) {
-      setSheetUrl(savedUrl);
-      // 초기 자동 연결 시도
-      (async () => {
-        try {
-          const res = await fetch(savedUrl + (savedUrl.includes("?") ? "&" : "?") + "_=" + Date.now());
-          if (res.ok) {
-            const d = await res.json();
-            handleConnect(d, savedUrl);
-          } else {
-            fetchVix(); // 연결 실패 시 VIX만이라도 갱신 시도
-          }
-        } catch (e) {
-          fetchVix();
-        }
-      })();
-    } else {
-      fetchVix();
-    }
+    fetchVix();
+    
+    // Auth 감지
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) loadPortfolio();
+  }, [user]);
 
   return(
     <div style={{fontFamily:"var(--font-sans)",color:"var(--color-text-primary)"}}>
@@ -2089,12 +1802,12 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
         <div style={{maxWidth:940,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
           <div>
             <div style={{fontSize:17,fontWeight:500,marginBottom:2}}>연금 포트폴리오 파일럿</div>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>삼성증권 IRP/연금저축 · VIX 기반 전략 · 은퇴 목표 관리</div>
+            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>삼성증권 IRP/연금저축 · Supabase 클라우드 DB · 은퇴 목표 관리</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {isDemo&&<Badge c="#633806" bg="#faeeda">데모 모드</Badge>}
             <Badge c={vixLoading?"var(--color-text-secondary)":"#27500a"} bg={vixLoading?"var(--color-background-secondary)":"#eaf3de"}>VIX {vixLoading?"…":vix.toFixed(1)}</Badge>
-            <Btn sm onClick={()=>setTab("setup")}>시트 연동</Btn>
+            <Btn sm onClick={()=>setTab("account")}>{user?"계정 관리":"로그인"}</Btn>
             <Btn sm onClick={()=>setTab("report")} danger>월간 리포트 PDF</Btn>
           </div>
         </div>
@@ -2120,7 +1833,7 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
         {tab==="alerts"    &&<AlertsPanel portfolio={portfolio} onStopLossChange={v=>setPortfolio(p=>({...p,stopLoss:v}))} onMddChange={v=>setPortfolio(p=>({...p,mddLimit:v}))}/>}
         {tab==="history"   &&<HistoryPanel portfolio={portfolio}/>}
         {tab==="report"    &&<MonthlyReport portfolio={portfolio} vix={vix} strategy={portfolio.strategy}/>}
-        {tab==="setup"     && (
+        {tab==="account"     && (
           <AuthSetup 
             user={user} 
             onLogin={handleLogin} 
