@@ -1481,10 +1481,7 @@ export default function PensionPilot(){
     try {
       setIsSaving(true);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        if (error.message.includes("Email not confirmed")) throw new Error("이메일 인증이 완료되지 않았습니다. 메일함을 확인해 주세요.");
-        throw error;
-      }
+      if (error) throw error;
     } catch (e) {
       alert("로그인 실패: " + e.message);
     } finally {
@@ -1504,10 +1501,10 @@ export default function PensionPilot(){
         }
       });
       if (error) {
-        if (error.status === 429) throw new Error("너무 많은 요청이 발생했습니다. 잠시 후(약 1시간 뒤) 다시 시도해 주세요.");
+        if (error.status === 429) throw new Error("너무 많은 요청이 발생했습니다. 잠시 후 다시 시도해 주세요.");
         throw error;
       }
-      alert("회원가입 신청 성공! 입력하신 메일함(" + email + ")을 확인하여 인증을 완료해 주세요.");
+      alert("회원가입이 완료되었습니다! 즉시 이용 가능합니다.");
     } catch (e) {
       alert("회원가입 실패: " + e.message);
     } finally {
