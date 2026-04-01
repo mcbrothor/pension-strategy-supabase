@@ -1205,17 +1205,25 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
   const [saveDate, setSaveDate] = useState(new Date().toISOString().split("T")[0]);
   const [isFetching, setIsFetching] = useState(false);
 
+  const [prevQtys, setPrevQtys] = useState({});
+
   useEffect(() => {
     if (latestTickers && latestTickers.length > 0) {
-      setItems(latestTickers.map(item => ({
-        ticker: item.ticker || "",
-        name: item.name || "",
-        assetClass: item.assetClass || "",
-        quantity: item.quantity || 0,
-        currentPrice: item.currentPrice || 0,
-        amount: item.amount || 0,
-        costAmt: item.costAmt || 0
-      })));
+      const pq = {};
+      const mapped = latestTickers.map(item => {
+        if (item.ticker) pq[item.ticker] = Number(item.quantity) || 0;
+        return {
+          ticker: item.ticker || "",
+          name: item.name || "",
+          assetClass: item.assetClass || "",
+          quantity: item.quantity || 0,
+          currentPrice: item.currentPrice || 0,
+          amount: item.amount || 0,
+          costAmt: item.costAmt || 0
+        };
+      });
+      setItems(mapped);
+      setPrevQtys(pq);
     } else if (items.length === 0) {
       setItems([{ ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]);
     }
@@ -1318,14 +1326,16 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
                 <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"10%"}}>티커</th>
                 <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"18%"}}>종목명(설명)</th>
                 <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>자산군</th>
+                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"8%"}}>이전 수량</th>
                 <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"10%"}}>주식수</th>
+                <th style={{textAlign:"center",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"8%"}}>변동</th>
                 <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>
                   현재가
                   <div style={{fontSize:9,fontWeight:400,color:"var(--color-text-secondary)",marginTop:2}}>*기록 날짜 기준 종가</div>
                 </th>
                 <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>매수원가(총액)</th>
                 <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>평가금액</th>
-                <th style={{width:50,background:"#fff"}}></th>
+                <th style={{width:80,background:"#fff"}}></th>
               </tr>
             </thead>
             <tbody>
@@ -1343,8 +1353,19 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
                       {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </td>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input type="number" value={item.quantity||""} onChange={e => updateItem(i, "quantity", e.target.value)} placeholder="0" style={{width:"100%",textAlign:"right",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none",fontVariantNumeric:"tabular-nums"}} />
+                  <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"var(--color-text-secondary)",fontVariantNumeric:"tabular-nums",background:"#f9f9f9"}}>
+                    {prevQtys[item.ticker] || 0}
+                  </td>
+                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)",background:Number(item.quantity)===0?"#fff5f5":"transparent"}}>
+                    <input type="number" value={item.quantity||""} onChange={e => updateItem(i, "quantity", e.target.value)} placeholder="0" style={{width:"100%",textAlign:"right",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:Number(item.quantity)===0?"#d32f2f":"var(--color-text-primary)",fontWeight:Number(item.quantity)===0?700:400,outline:"none",fontVariantNumeric:"tabular-nums"}} />
+                  </td>
+                  <td style={{padding:"10px 12px",textAlign:"center",borderRight:"1px solid var(--color-border-tertiary)",fontSize:12,fontWeight:600}}>
+                    {(() => {
+                      const prev = prevQtys[item.ticker] || 0;
+                      const diff = (Number(item.quantity) || 0) - prev;
+                      if (diff === 0) return <span style={{color:"#ccc"}}>-</span>;
+                      return <span style={{color:diff>0?"#185fa5":"#d32f2f"}}>{diff > 0 ? "+" : ""}{diff}</span>;
+                    })()}
                   </td>
                   <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"#185fa5",fontWeight:500,background:item.currentPrice>0?"#f0f7ff":"transparent",fontVariantNumeric:"tabular-nums"}}>
                     {item.currentPrice > 0 ? fmt(item.currentPrice) : "-"}
@@ -1355,8 +1376,9 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
                   <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"#0c447c",fontWeight:700,background:"#f0f7ff",fontVariantNumeric:"tabular-nums"}}>
                     {item.amount > 0 ? fmt(Math.round(item.amount)) : "0"}
                   </td>
-                  <td style={{textAlign:"center",padding:0}}>
-                    <button onClick={() => removeItem(i)} title="행 삭제" style={{border:"none",background:"none",color:"#ccc",cursor:"pointer",fontSize:18,padding:"8px",width:"100%",height:"100%",display:"block",transition:"all 0.2s"}} onMouseOver={e=>{e.target.style.color="#a32d2d";e.target.style.background="#fcebeb"}} onMouseOut={e=>{e.target.style.color="#ccc";e.target.style.background="none"}}>&times;</button>
+                  <td style={{textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:4,height:44}}>
+                    <button onClick={() => updateItem(i, "quantity", 0)} title="전량 매도" style={{border:"none",background:Number(item.quantity)===0?"#eee":"#fdf2f2",color:Number(item.quantity)===0?"#999":"#d32f2f",cursor:"pointer",fontSize:11,padding:"4px 6px",borderRadius:4,fontWeight:600}} disabled={Number(item.quantity)===0}>매도</button>
+                    <button onClick={() => removeItem(i)} title="행 삭제" style={{border:"none",background:"none",color:"#ccc",cursor:"pointer",fontSize:18,padding:"4px"}}>&times;</button>
                   </td>
                 </tr>
               ))}
@@ -1738,9 +1760,9 @@ export default function PensionPilot(){
       
       if (delErr) throw delErr;
 
-      // 2. 새 종목 삽입
+      // 2. 새 종목 삽입 (수량이 0인 종목은 제외하여 매도 처리)
       const insertItems = items
-        .filter(it => it.ticker)
+        .filter(it => it.ticker && Number(it.quantity) > 0)
         .map(it => ({
           user_id: user.id,
           ticker: it.ticker,
