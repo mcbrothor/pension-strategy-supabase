@@ -1828,7 +1828,7 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout }) {
         {tab==="strategy"  &&<StrategySelect accountType={portfolio.accountType} onStrategyApply={handleSelectStrategy}/>}
         {tab==="rebalance" &&<RebalanceJudge portfolio={portfolio} vix={vix}/>}
         {tab==="roadmap"   &&<RetirementRoadmap strategyId={portfolio.strategy}/>}
-        {tab==="entry"     &&<EntryPanel latestTickers={portfolio.latestTickers} krEtfs={krEtfs} tickerMap={tickerMap} onSave={handleSaveEntries} isSaving={isSaving} confirmAction={confirmAction} sheetUrl={sheetUrl} />}
+        {tab==="entry"     &&<EntryPanel latestTickers={portfolio.latestTickers} krEtfs={krEtfs} tickerMap={tickerMap} onSave={handleSaveEntries} isSaving={isSaving} confirmAction={confirmAction} />}
         {tab==="compare"   &&<CompareWeights portfolio={portfolio}/>}
         {tab==="alerts"    &&<AlertsPanel portfolio={portfolio} onStopLossChange={v=>setPortfolio(p=>({...p,stopLoss:v}))} onMddChange={v=>setPortfolio(p=>({...p,mddLimit:v}))}/>}
         {tab==="history"   &&<HistoryPanel portfolio={portfolio}/>}
