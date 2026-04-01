@@ -1496,7 +1496,13 @@ export default function PensionPilot(){
     if (!email || !password) return alert("이메일과 비밀번호를 모두 입력해 주세요.");
     try {
       setIsSaving(true);
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          emailRedirectTo: window.location.origin
+        }
+      });
       if (error) {
         if (error.status === 429) throw new Error("너무 많은 요청이 발생했습니다. 잠시 후(약 1시간 뒤) 다시 시도해 주세요.");
         throw error;
