@@ -1232,7 +1232,7 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
   const addItem = () => setItems([...items, { ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
 
-  // 실시간 시세 동기화 함수 (야후 파이낸스 병렬 조회)
+  // 실시간 시세 동기화 함수 (한국투자증권 KIS API 연동)
   async function syncPrices() {
     const tickers = items
       .map(it => String(it.ticker).trim())
@@ -1245,25 +1245,18 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
     try {
       const results = await Promise.all(tickers.map(async (ticker) => {
         try {
-          // 한국 종목(6자리 숫자)인 경우 .KS 접미사 시도
-          const isKR = ticker.length === 6 && /^\d+$/.test(ticker);
-          const symbol = isKR ? ticker + ".KS" : ticker;
-          
-          const yahooUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`);
-          const res = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
+          // 내부 서버리스 API 프록시 호출
+          const res = await fetch(`/api/kis-price?ticker=${ticker}`);
           
           if (res.ok) {
-            const wrapper = await res.json();
-            const d = JSON.parse(wrapper.contents);
-            const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-            
-            if (typeof price === "number" && price > 0) {
+            const data = await res.json();
+            if (typeof data.price === "number" && data.price > 0) {
               successCount++;
-              return { ticker, price };
+              return { ticker, price: data.price };
             }
           }
         } catch (e) {
-          console.warn(`${ticker} 시세 조회 실패:`, e.message);
+          console.warn(`${ticker} KIS API 조회 실패:`, e.message);
         }
         return null;
       }));
@@ -1272,7 +1265,7 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
       results.forEach(r => { if (r) priceMap[r.ticker] = r.price; });
 
       setItems(prev => prev.map(it => {
-        const p = priceMap[it.ticker];
+        const p = priceMap[it.ticker].price || priceMap[it.ticker]; // map 구조에 따라 유연하게 처리
         if (p) {
           const q = Number(it.quantity) || 0;
           return { ...it, currentPrice: p, amount: q * p };
@@ -1281,12 +1274,12 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
       }));
 
       if (successCount > 0) {
-        alert(`총 ${successCount}개 항목의 현재가를 성공적으로 동기화했습니다.`);
+        alert(`한국투자증권 API를 통해 총 ${successCount}개 항목의 현재가를 성공적으로 동기화했습니다.`);
       } else {
-        alert("시세를 불러오는 데 실패했습니다. 티커가 정확한지 확인해 주세요.");
+        alert("시세를 불러오는 데 실패했습니다. [계정 설정]에서 KIS API 키가 올바르게 설정되었는지 확인해 주세요.");
       }
     } catch (e) {
-      console.error("Sync Error:", e);
+      console.error("KIS Sync Error:", e);
       alert("시세 동기화 중 오류가 발생했습니다.");
     }
     setIsFetching(false);
