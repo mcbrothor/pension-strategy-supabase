@@ -137,14 +137,14 @@ function checkWithdraw(bal,monthly,rate,years){
 // 3. 공통 UI 컴포넌트
 // ═══════════════════════════════════════════════════════════════════════════
 const Card=({children,style,accent})=>(
-  <div style={{background:"var(--color-background-primary)",border:`${accent?"2px":"0.5px"} solid ${accent||"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-lg)",padding:"1.25rem",marginBottom:"1rem",...style}}>
+  <div style={{background:"var(--bg-card)",border:`${accent?"2px":"0.5px"} solid ${accent||"var(--border-glass)"}`,borderRadius:"var(--border-radius-lg)",padding:"1.25rem",marginBottom:"1rem",...style}}>
     {children}
   </div>
 );
-const ST=({children})=><div style={{fontSize:11,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:".75rem",letterSpacing:".04em"}}>{children}</div>;
+const ST=({children})=><div style={{fontSize:11,fontWeight:500,color:"var(--text-dim)",marginBottom:".75rem",letterSpacing:".04em"}}>{children}</div>;
 const Badge=({children,c,bg})=><span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:600,background:bg,color:c,display:"inline-block"}}>{children}</span>;
 const Btn=({children,onClick,primary,danger,sm,style})=>(
-  <button onClick={onClick} style={{padding:sm?"5px 12px":"8px 20px",border:`0.5px solid ${primary||danger?"transparent":"var(--color-border-secondary)"}`,borderRadius:"var(--border-radius-md)",background:danger?"#a32d2d":primary?"var(--color-text-primary)":"none",color:danger||primary?"var(--color-background-primary)":"var(--color-text-primary)",fontSize:sm?11:13,fontWeight:500,cursor:"pointer",fontFamily:"var(--font-sans)",...style}}>
+  <button onClick={onClick} style={{padding:sm?"5px 12px":"8px 20px",border:`0.5px solid ${primary||danger?"transparent":"var(--border-glass)"}`,borderRadius:"var(--radius-md)",background:danger?"#a32d2d":primary?"var(--text-main)":"none",color:danger||primary?"var(--bg-card)":"var(--text-main)",fontSize:sm?11:13,fontWeight:500,cursor:"pointer",fontFamily:"var(--font-sans)",...style}}>
     {children}
   </button>
 );
@@ -159,7 +159,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
       zIndex: 10000, padding: "1.5rem"
     }} onClick={onClose}>
       <div style={{
-        backgroundColor: "var(--color-background-primary)",
+        backgroundColor: "var(--bg-card)",
         borderRadius: "var(--border-radius-lg)",
         width: "100%", maxWidth: "400px",
         padding: "1.75rem",
@@ -172,8 +172,8 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
             to { transform: scale(1); opacity: 1; }
           }
         `}</style>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: "0.75rem", color: "var(--color-text-primary)" }}>{title}</div>
-        <div style={{ fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: "2rem" }}>{message}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: "0.75rem", color: "var(--text-main)" }}>{title}</div>
+        <div style={{ fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: "2rem" }}>{message}</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
           <Btn style={{ flex: 1, height: 44 }} onClick={onClose}>아니오</Btn>
           <Btn primary style={{ flex: 1, height: 44 }} onClick={() => { onConfirm(); onClose(); }}>네, 적용합니다</Btn>
@@ -184,18 +184,18 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
 };
 
 const MetaCard=({label,value,sub,subColor})=>(
-  <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:".875rem",textAlign:"center"}}>
-    <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3}}>{label}</div>
+  <div style={{background:"var(--bg-main)",borderRadius:"var(--radius-md)",padding:".875rem",textAlign:"center"}}>
+    <div style={{fontSize:11,color:"var(--text-dim)",marginBottom:3}}>{label}</div>
     <div style={{fontSize:19,fontWeight:500}}>{value}</div>
-    {sub&&<div style={{fontSize:10,color:subColor||"var(--color-text-secondary)",fontWeight:500,marginTop:2}}>{sub}</div>}
+    {sub&&<div style={{fontSize:10,color:subColor||"var(--text-dim)",fontWeight:500,marginTop:2}}>{sub}</div>}
   </div>
 );
 const AllocBar=({label,pct,target,color})=>(
   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-    <div style={{fontSize:11,minWidth:130,color:"var(--color-text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
-    <div style={{flex:1,height:7,background:"var(--color-background-secondary)",borderRadius:4,overflow:"hidden",position:"relative",minWidth:60}}>
+    <div style={{fontSize:11,minWidth:130,color:"var(--text-dim)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+    <div style={{flex:1,height:7,background:"var(--bg-main)",borderRadius:4,overflow:"hidden",position:"relative",minWidth:60}}>
       <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:color,borderRadius:4}}/>
-      {target!=null&&<div style={{position:"absolute",top:0,left:`${Math.min(target,100)}%`,width:2,height:"100%",background:"var(--color-text-primary)",opacity:.3}}/>}
+      {target!=null&&<div style={{position:"absolute",top:0,left:`${Math.min(target,100)}%`,width:2,height:"100%",background:"var(--text-main)",opacity:.3}}/>}
     </div>
     <span style={{fontSize:11,fontWeight:500,minWidth:30,textAlign:"right"}}>{pct.toFixed(1)}%</span>
     {target!=null&&<span style={{fontSize:10,minWidth:44,textAlign:"right",color:Math.abs(pct-target)>=5?(pct>target?"#a32d2d":"#0c447c"):"#3b6d11"}}>{fmtP(pct-target)}</span>}
@@ -206,9 +206,9 @@ const VixBar=({vix})=>{
   return(
     <div>
       <div style={{height:9,borderRadius:5,background:"linear-gradient(to right,#185fa5,#639922,#ba7517,#d85a30,#a32d2d)",position:"relative",margin:"8px 0 3px"}}>
-        <div style={{position:"absolute",top:-5,left:`${pct}%`,width:3,height:19,background:"var(--color-text-primary)",borderRadius:1,transform:"translateX(-50%)"}}/>
+        <div style={{position:"absolute",top:-5,left:`${pct}%`,width:3,height:19,background:"var(--text-main)",borderRadius:1,transform:"translateX(-50%)"}}/>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--color-text-secondary)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-dim)"}}>
         <span>0 안정</span><span>15</span><span>25</span><span>35</span><span>50+</span>
       </div>
     </div>
@@ -218,7 +218,7 @@ const ReasonBox=({type,title,body})=>{
   const tC={ok:"#27500a",warn:"#633806",danger:"#791f1f",info:"#0c447c"};
   const tB={ok:"#eaf3de",warn:"#faeeda",danger:"#fcebeb",info:"#e6f1fb"};
   return(
-    <div style={{background:tB[type],borderRadius:"var(--border-radius-md)",padding:".875rem 1rem",marginBottom:8,borderLeft:`3px solid ${tC[type]}`}}>
+    <div style={{background:tB[type],borderRadius:"var(--radius-md)",padding:".875rem 1rem",marginBottom:8,borderLeft:`3px solid ${tC[type]}`}}>
       <div style={{fontSize:12,fontWeight:600,color:tC[type],marginBottom:3}}>{title}</div>
       <div style={{fontSize:12,color:tC[type],opacity:.9,lineHeight:1.6}}>{body}</div>
     </div>
@@ -237,19 +237,19 @@ const HoldingsCard = ({ holdings, total }) => {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {holdings.map((h, i) => {
           const pnl = h.costAmt > 0 ? ((h.amt - h.costAmt) / h.costAmt * 100).toFixed(1) : null;
-          const pnlColor = pnl > 0 ? "#a32d2d" : pnl < 0 ? "#0c447c" : "var(--color-text-secondary)";
+          const pnlColor = pnl > 0 ? "#a32d2d" : pnl < 0 ? "#0c447c" : "var(--text-dim)";
           return (
             <div key={i} style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 12px", borderRadius: 8, background: "var(--color-background-secondary)",
-              border: "0.5px solid var(--color-border-tertiary)"
+              padding: "10px 12px", borderRadius: 8, background: "var(--bg-main)",
+              border: "0.5px solid var(--border-glass)"
             }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{h.etf.replace(" (H)", "")}</span>
-                  <Badge c="var(--color-text-secondary)" bg="var(--color-background-primary)">{h.cls}</Badge>
+                  <Badge c="var(--text-dim)" bg="var(--bg-card)">{h.cls}</Badge>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
                   {h.code && <span style={{ fontFamily: "monospace", marginRight: 8 }}>{h.code}</span>}
                   비중 {h.cur}%
                 </div>
@@ -267,7 +267,7 @@ const HoldingsCard = ({ holdings, total }) => {
         })}
       </div>
       {holdings.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)", fontSize: 12 }}>
+        <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-dim)", fontSize: 12 }}>
           보유 중인 종목이 없습니다.<br/>[종목 입력] 탭에서 잔고를 입력하세요.
         </div>
       )}
@@ -310,26 +310,26 @@ function Dashboard({portfolio,vix,vixLoading,onFetchVix,onGo}){
           <Card style={{ marginBottom: 0 }}>
             <ST>VIX 전략 신호</ST>
             <VixBar vix={vix}/>
-            <div style={{background:z.bg,borderRadius:"var(--border-radius-md)",padding:".875rem 1rem",marginTop:10}}>
+            <div style={{background:z.bg,borderRadius:"var(--radius-md)",padding:".875rem 1rem",marginTop:10}}>
               <Badge c={z.color} bg={z.color+"20"}>{z.mode}</Badge>
               <span style={{fontSize:12,color:z.color,marginLeft:8,lineHeight:1.7}}>{z.desc}</span>
             </div>
           </Card>
 
           {portfolio.holdings.some(h=>{const cur=Math.round(h.amt/total*1000)/10;return Math.abs(cur-h.target)>=5;})&&(
-            <div style={{background:"#faeeda",borderRadius:"var(--border-radius-md)",padding:".875rem 1rem",fontSize:12,color:"#633806"}}>
+            <div style={{background:"#faeeda",borderRadius:"var(--radius-md)",padding:".875rem 1rem",fontSize:12,color:"#633806"}}>
               5%p 이상 이탈 자산이 있습니다. 리밸런싱 판단 탭을 확인하세요.
             </div>
           )}
 
           {portfolio.accountType==="IRP"&&(
-            <div style={{background:"#eaf3de",borderRadius:"var(--border-radius-md)",padding:".875rem 1rem",fontSize:12,color:"#27500a"}}>
+            <div style={{background:"#eaf3de",borderRadius:"var(--radius-md)",padding:".875rem 1rem",fontSize:12,color:"#27500a"}}>
               IRP 위험자산 목표 비중은 70%를 넘지 않도록 자동 조정됩니다.
             </div>
           )}
 
           {s.type==="momentum"&&(
-            <div style={{background:"#e6f1fb",borderRadius:"var(--border-radius-md)",padding:".875rem 1rem",fontSize:12,color:"#0c447c"}}>
+            <div style={{background:"#e6f1fb",borderRadius:"var(--radius-md)",padding:".875rem 1rem",fontSize:12,color:"#0c447c"}}>
               모멘텀 전략의 목표 비중은 서버리스(`/api/momentum`) 계산 결과를 기준으로 갱신됩니다.
             </div>
           )}
@@ -372,7 +372,7 @@ function StrategySelect({accountType,onStrategyApply}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
           <div>
             <div style={{fontSize:14,fontWeight:500,marginBottom:3}}>투자 전략 선택</div>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>삼성증권 연금계좌 실제 매수 가능 ETF 기준</div>
+            <div style={{fontSize:11,color:"var(--text-dim)"}}>삼성증권 연금계좌 실제 매수 가능 ETF 기준</div>
           </div>
           <div style={{display:"flex",gap:5}}>
             {["IRP","연금저축","혼합"].map(t=>(
@@ -385,7 +385,7 @@ function StrategySelect({accountType,onStrategyApply}){
       {/* 필터 */}
       <div style={{display:"flex",gap:6,marginBottom:"1.25rem",flexWrap:"wrap"}}>
         {[["all","전체",null],["fixed","실행 가능 — 고정비중","#3b6d11"],["momentum","자동 계산 — 모멘텀","#ba7517"]].map(([f,lbl,col])=>(
-          <Btn key={f} sm onClick={()=>setFilt(f)} style={{background:filt===f?(col||"var(--color-text-primary)"):"none",color:filt===f?"#fff":"var(--color-text-secondary)",borderColor:filt===f?"transparent":"var(--color-border-secondary)"}}>
+          <Btn key={f} sm onClick={()=>setFilt(f)} style={{background:filt===f?(col||"var(--text-main)"):"none",color:filt===f?"#fff":"var(--text-dim)",borderColor:filt===f?"transparent":"var(--border-glass)"}}>
             {lbl} ({f==="all"?STRATEGIES.length:STRATEGIES.filter(s=>s.type===f).length})
           </Btn>
         ))}
@@ -398,7 +398,7 @@ function StrategySelect({accountType,onStrategyApply}){
           const isSel=s.id===sel;
           return(
             <div key={s.id} onClick={()=>setSel(s.id===sel?null:s.id)}
-              style={{background:"var(--color-background-primary)",border:`${isSel?"2px":"0.5px"} solid ${isSel?(s.type==="fixed"?"#3b6d11":"#ba7517"):"var(--color-border-tertiary)"}`,borderRadius:"var(--border-radius-lg)",padding:"1rem",cursor:"pointer"}}>
+              style={{background:"var(--bg-card)",border:`${isSel?"2px":"0.5px"} solid ${isSel?(s.type==="fixed"?"#3b6d11":"#ba7517"):"var(--border-glass)"}`,borderRadius:"var(--border-radius-lg)",padding:"1rem",cursor:"pointer"}}>
               <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:7}}>
                 <Badge c={s.type==="fixed"?"#27500a":"#633806"} bg={s.type==="fixed"?"#eaf3de":"#faeeda"}>{s.type==="fixed"?"실행가능":"자동 계산"}</Badge>
                 <Badge c={lvC[s.level]} bg={lvB[s.level]}>{s.level}</Badge>
@@ -406,8 +406,8 @@ function StrategySelect({accountType,onStrategyApply}){
               </div>
               <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.4}}>{s.name}</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>수익 <strong style={{color:"var(--color-text-primary)"}}>{s.ret}</strong></span>
-                <span style={{fontSize:11,color:"var(--color-text-secondary)"}}>MDD <strong style={{color:"var(--color-text-primary)"}}>{s.mdd}</strong></span>
+                <span style={{fontSize:11,color:"var(--text-dim)"}}>수익 <strong style={{color:"var(--text-main)"}}>{s.ret}</strong></span>
+                <span style={{fontSize:11,color:"var(--text-dim)"}}>MDD <strong style={{color:"var(--text-main)"}}>{s.mdd}</strong></span>
               </div>
             </div>
           );
@@ -423,7 +423,7 @@ function StrategySelect({accountType,onStrategyApply}){
             </Badge>
           </div>
           <div style={{fontSize:15,fontWeight:500,marginBottom:5}}>{selS.name}</div>
-          <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6,marginBottom:10}}>{selS.desc}</div>
+          <div style={{fontSize:12,color:"var(--text-dim)",lineHeight:1.6,marginBottom:10}}>{selS.desc}</div>
           <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:"1.5rem"}}>
             <div>
               {/* IRP 바 */}
@@ -431,11 +431,11 @@ function StrategySelect({accountType,onStrategyApply}){
                 const r=selS.irpRisk,bC=r>limit?"#a32d2d":r>limit*.85?"#ba7517":"#3b6d11";
                 return(
                   <div style={{marginBottom:"1rem"}}>
-                    <div style={{height:9,background:"var(--color-background-secondary)",borderRadius:5,overflow:"hidden",position:"relative",margin:"4px 0 3px"}}>
+                    <div style={{height:9,background:"var(--bg-main)",borderRadius:5,overflow:"hidden",position:"relative",margin:"4px 0 3px"}}>
                       <div style={{height:"100%",width:`${Math.min(r,100)}%`,background:bC,borderRadius:5}}/>
                       <div style={{position:"absolute",top:0,left:`${limit}%`,width:2,height:"100%",background:"#a32d2d",opacity:.6,transform:"translateX(-50%)"}}/>
                     </div>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--color-text-secondary)",marginBottom:4}}><span>0%</span><span style={{color:"#a32d2d",fontWeight:600}}>{limit}% 한도</span><span>100%</span></div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-dim)",marginBottom:4}}><span>0%</span><span style={{color:"#a32d2d",fontWeight:600}}>{limit}% 한도</span><span>100%</span></div>
                     <div style={{fontSize:12,fontWeight:500,color:bC}}>{r>limit?`⚠ 위험자산 ${r}% — 한도 초과`:r>limit*.85?`△ 위험자산 ${r}% — 한도 근접`:`✓ 위험자산 ${r}% — IRP 적합`}</div>
                   </div>
                 );
@@ -450,20 +450,20 @@ function StrategySelect({accountType,onStrategyApply}){
               {/* ETF 테이블 */}
               <ST>{selS.type==="fixed"?"구성 ETF (삼성증권 연금계좌 매수 가능)":"대상 ETF 풀"}</ST>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600}}>ETF명</th>
-                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600}}>코드</th>
-                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600}}>{selS.type==="fixed"?"비중":"역할"}</th>
-                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--color-text-secondary)",fontWeight:600}}>위험</th>
+                <thead><tr style={{borderBottom:"0.5px solid var(--border-glass)"}}>
+                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--text-dim)",fontWeight:600}}>ETF명</th>
+                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--text-dim)",fontWeight:600}}>코드</th>
+                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--text-dim)",fontWeight:600}}>{selS.type==="fixed"?"비중":"역할"}</th>
+                  <th style={{textAlign:"left",padding:"4px 6px",fontSize:10,color:"var(--text-dim)",fontWeight:600}}>위험</th>
                 </tr></thead>
                 <tbody>{selS.etfs.map((e,i)=>(
-                  <tr key={i} style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-                    <td style={{padding:"6px 6px"}}><div style={{fontWeight:500,fontSize:12}}>{e.name}</div><div style={{fontSize:10,color:"var(--color-text-secondary)"}}>{e.cls}</div></td>
-                    <td style={{padding:"6px 6px"}}><span style={{fontFamily:"monospace",fontSize:10,background:"var(--color-background-secondary)",padding:"1px 4px",borderRadius:3,color:"var(--color-text-secondary)"}}>{e.code}</span></td>
+                  <tr key={i} style={{borderBottom:"0.5px solid var(--border-glass)"}}>
+                    <td style={{padding:"6px 6px"}}><div style={{fontWeight:500,fontSize:12}}>{e.name}</div><div style={{fontSize:10,color:"var(--text-dim)"}}>{e.cls}</div></td>
+                    <td style={{padding:"6px 6px"}}><span style={{fontFamily:"monospace",fontSize:10,background:"var(--bg-main)",padding:"1px 4px",borderRadius:3,color:"var(--text-dim)"}}>{e.code}</span></td>
                     <td style={{padding:"6px 6px"}}>
                       {selS.type==="fixed"&&e.w!=null
-                        ?<div style={{display:"flex",alignItems:"center",gap:5}}><div style={{flex:1,height:5,background:"var(--color-background-secondary)",borderRadius:3,overflow:"hidden",minWidth:40}}><div style={{height:"100%",width:`${e.w}%`,background:ASSET_COLORS[e.cls]||"#888",borderRadius:3}}/></div><span style={{fontSize:11,fontWeight:600,minWidth:26,textAlign:"right"}}>{e.w}%</span></div>
-                        :<span style={{fontSize:11,color:"var(--color-text-secondary)"}}>{e.note||"-"}</span>}
+                        ?<div style={{display:"flex",alignItems:"center",gap:5}}><div style={{flex:1,height:5,background:"var(--bg-main)",borderRadius:3,overflow:"hidden",minWidth:40}}><div style={{height:"100%",width:`${e.w}%`,background:ASSET_COLORS[e.cls]||"#888",borderRadius:3}}/></div><span style={{fontSize:11,fontWeight:600,minWidth:26,textAlign:"right"}}>{e.w}%</span></div>
+                        :<span style={{fontSize:11,color:"var(--text-dim)"}}>{e.note||"-"}</span>}
                     </td>
                     <td style={{padding:"6px 6px"}}><span style={{fontSize:9,padding:"2px 5px",borderRadius:3,fontWeight:600,background:e.risk?"#fcebeb":"#eaf3de",color:e.risk?"#791f1f":"#27500a"}}>{e.risk?"위험":"안전"}</span></td>
                   </tr>
@@ -475,22 +475,22 @@ function StrategySelect({accountType,onStrategyApply}){
               {selS.type==="fixed"
                 ?selS.etfs.map((e,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:7,marginBottom:9}}>
-                    <div style={{fontSize:11,minWidth:120,color:"var(--color-text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name.replace(" (H)","").replace("(합성H)","")}</div>
-                    <div style={{flex:1,height:7,background:"var(--color-background-secondary)",borderRadius:4,overflow:"hidden",minWidth:50}}><div style={{height:"100%",width:`${e.w}%`,background:ASSET_COLORS[e.cls]||"#888",borderRadius:4}}/></div>
+                    <div style={{fontSize:11,minWidth:120,color:"var(--text-dim)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name.replace(" (H)","").replace("(합성H)","")}</div>
+                    <div style={{flex:1,height:7,background:"var(--bg-main)",borderRadius:4,overflow:"hidden",minWidth:50}}><div style={{height:"100%",width:`${e.w}%`,background:ASSET_COLORS[e.cls]||"#888",borderRadius:4}}/></div>
                     <span style={{fontSize:12,fontWeight:500,minWidth:28,textAlign:"right"}}>{e.w}%</span>
                   </div>
                 ))
                 :[...new Set(selS.etfs.map(e=>e.cls))].map(cls=>(
                   <div key={cls} style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
                     <div style={{width:10,height:10,borderRadius:2,background:ASSET_COLORS[cls]||"#888",flexShrink:0}}/>
-                    <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{cls}</span>
+                    <span style={{fontSize:12,color:"var(--text-dim)"}}>{cls}</span>
                   </div>
                 ))
               }
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"1rem",paddingTop:"1rem",borderTop:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap",gap:10}}>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{selS.type==="fixed"?`[투자전략설정] 시트 B1에 "${selS.id}" 입력 · 리밸런싱: ${selS.rebal}`:`매월 계산 후 [종목 입력] 시트에 기록 · 리밸런싱: ${selS.rebal}`}</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"1rem",paddingTop:"1rem",borderTop:"0.5px solid var(--border-glass)",flexWrap:"wrap",gap:10}}>
+            <div style={{fontSize:11,color:"var(--text-dim)"}}>{selS.type==="fixed"?`[투자전략설정] 시트 B1에 "${selS.id}" 입력 · 리밸런싱: ${selS.rebal}`:`매월 계산 후 [종목 입력] 시트에 기록 · 리밸런싱: ${selS.rebal}`}</div>
             <Btn primary={selS.type==="fixed"} style={selS.type!=="fixed"?{background:"#ba7517",color:"#fff",borderColor:"transparent"}:{}} onClick={()=>onStrategyApply&&onStrategyApply(selS.id)}>
               {selS.type==="fixed"?"이 전략 적용하기":"모멘텀 자동 계산 적용"}
             </Btn>
@@ -549,12 +549,12 @@ function RebalanceJudge({portfolio,vix}){
             <div style={{fontSize:15,fontWeight:500,marginBottom:4}}>리밸런싱 판단 센터</div>
             <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
               <Badge c="#27500a" bg="#eaf3de">{getStrat(portfolio.strategy).name}</Badge>
-              <Badge c={isOverdue?"#791f1f":"var(--color-text-secondary)"} bg={isOverdue?"#fcebeb":"var(--color-background-secondary)"}>{elapsed}일 경과</Badge>
-              <Badge c="var(--color-text-secondary)" bg="var(--color-background-secondary)">{portfolio.accountType}</Badge>
+              <Badge c={isOverdue?"#791f1f":"var(--text-dim)"} bg={isOverdue?"#fcebeb":"var(--bg-main)"}>{elapsed}일 경과</Badge>
+              <Badge c="var(--text-dim)" bg="var(--bg-main)">{portfolio.accountType}</Badge>
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:2}}>마지막 리밸런싱</div>
+            <div style={{fontSize:11,color:"var(--text-dim)",marginBottom:2}}>마지막 리밸런싱</div>
             <div style={{fontSize:13,fontWeight:500}}>{portfolio.lastRebalDate}</div>
           </div>
         </div>
@@ -567,9 +567,9 @@ function RebalanceJudge({portfolio,vix}){
       </Card>
 
       {/* 탭 */}
-      <div style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--color-border-tertiary)",marginBottom:"1.25rem"}}>
+      <div style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--border-glass)",marginBottom:"1.25rem"}}>
         {tabs.map((t,i)=>(
-          <button key={i} onClick={()=>setStep(i)} style={{padding:"8px 16px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:step===i?"var(--color-text-primary)":"var(--color-text-secondary)",borderBottom:`2px solid ${step===i?"var(--color-text-primary)":"transparent"}`,fontWeight:step===i?500:400,fontFamily:"var(--font-sans)",marginBottom:-1}}>
+          <button key={i} onClick={()=>setStep(i)} style={{padding:"8px 16px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:step===i?"var(--text-main)":"var(--text-dim)",borderBottom:`2px solid ${step===i?"var(--text-main)":"transparent"}`,fontWeight:step===i?500:400,fontFamily:"var(--font-sans)",marginBottom:-1}}>
             {t}
           </button>
         ))}
@@ -584,17 +584,17 @@ function RebalanceJudge({portfolio,vix}){
                 <div style={{fontSize:9,color:isOverdue?"#a32d2d":isTime?"#ba7517":"#3b6d11"}}>경과</div>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:500,color:isOverdue?"#a32d2d":isTime?"#ba7517":"var(--color-text-primary)",marginBottom:4}}>
+                <div style={{fontSize:14,fontWeight:500,color:isOverdue?"#a32d2d":isTime?"#ba7517":"var(--text-main)",marginBottom:4}}>
                   {isOverdue?"리밸런싱 기준일 도달 — 즉시 실행 권장":isTime?"리밸런싱 시점 도달":"리밸런싱 예정 — "+`${required-elapsed}일 후`}
                 </div>
-                <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.7}}>마지막: {portfolio.lastRebalDate} · 주기: {portfolio.rebalPeriod}({required}일)</div>
+                <div style={{fontSize:12,color:"var(--text-dim)",lineHeight:1.7}}>마지막: {portfolio.lastRebalDate} · 주기: {portfolio.rebalPeriod}({required}일)</div>
               </div>
               <div style={{background:isOverdue?"#fcebeb":isTime?"#faeeda":"#eaf3de",borderRadius:8,padding:".75rem 1rem",textAlign:"center",minWidth:80}}>
                 <div style={{fontSize:10,color:isOverdue?"#791f1f":isTime?"#633806":"#27500a"}}>진행률</div>
                 <div style={{fontSize:20,fontWeight:500,color:isOverdue?"#a32d2d":isTime?"#ba7517":"#3b6d11"}}>{Math.min(Math.round(elapsed/required*100),100)}%</div>
               </div>
             </div>
-            <div style={{height:6,background:"var(--color-background-secondary)",borderRadius:3,overflow:"hidden",margin:"1rem 0 3px"}}>
+            <div style={{height:6,background:"var(--bg-main)",borderRadius:3,overflow:"hidden",margin:"1rem 0 3px"}}>
               <div style={{height:"100%",width:`${Math.min(elapsed/required*100,100)}%`,background:isOverdue?"#a32d2d":isTime?"#ba7517":"#3b6d11",borderRadius:3}}/>
             </div>
           </Card>
@@ -615,26 +615,26 @@ function RebalanceJudge({portfolio,vix}){
               <div style={{fontSize:14,fontWeight:500,color:isOverdue||portfolio.mdd<portfolio.mddLimit?"#791f1f":"#27500a",marginBottom:5}}>
                 {portfolio.mdd<portfolio.mddLimit?"리밸런싱 실행 — MDD 제한선 초과. 방어 자산 우선.":isOverdue?"리밸런싱 실행 — 주기 도달. 전략 기준대로 조정하세요.":isTime?"리밸런싱 실행 — 시점 도달. VIX 신호 참고해 집행하세요.":"리밸런싱 불필요 — 기준일까지 유지하세요."}
               </div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.7}}>{vix>35?"공황 구간 — 분할 집행(3~5회) 권장.":vix>25?"불안 구간 — 2~3회 분할 매수 권장.":"정상 구간 — 전략 기준대로 일괄 집행 가능."}</div>
+              <div style={{fontSize:12,color:"var(--text-dim)",lineHeight:1.7}}>{vix>35?"공황 구간 — 분할 집행(3~5회) 권장.":vix>25?"불안 구간 — 2~3회 분할 매수 권장.":"정상 구간 — 전략 기준대로 일괄 집행 가능."}</div>
             </div>
             {reasons.map((r,i)=><ReasonBox key={i} {...r}/>)}
           </Card>
           <Card>
             <ST>자산별 판단</ST>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead><tr style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>{["ETF","현재","목표","편차","수익률","판단"].map(h=><th key={h} style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--color-text-secondary)",fontWeight:600}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{borderBottom:"0.5px solid var(--border-glass)"}}>{["ETF","현재","목표","편차","수익률","판단"].map(h=><th key={h} style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{h}</th>)}</tr></thead>
               <tbody>{holdings.map((h,i)=>{
                 const isSL=h.pnlPct!==null&&h.pnlPct<portfolio.stopLoss;
                 const act=isSL?"손절 우선":h.actionAmt>5000?"매도":h.actionAmt<-5000?"매수":"유지";
                 const aC=isSL?"#791f1f":act==="매도"?"#a32d2d":act==="매수"?"#0c447c":"#27500a";
                 const aBg=isSL?"#fcebeb":act==="매도"?"#fcebeb":act==="매수"?"#e6f1fb":"#eaf3de";
                 return(
-                  <tr key={i} style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-                    <td style={{padding:"7px 8px"}}><div style={{fontWeight:500}}>{h.etf.replace(" (H)","")}</div><div style={{fontSize:10,color:"var(--color-text-secondary)"}}>{h.code}</div></td>
+                  <tr key={i} style={{borderBottom:"0.5px solid var(--border-glass)"}}>
+                    <td style={{padding:"7px 8px"}}><div style={{fontWeight:500}}>{h.etf.replace(" (H)","")}</div><div style={{fontSize:10,color:"var(--text-dim)"}}>{h.code}</div></td>
                     <td style={{padding:"7px 8px",fontWeight:500}}>{h.cur}%</td>
-                    <td style={{padding:"7px 8px",color:"var(--color-text-secondary)"}}>{h.target}%</td>
+                    <td style={{padding:"7px 8px",color:"var(--text-dim)"}}>{h.target}%</td>
                     <td style={{padding:"7px 8px",fontWeight:600,color:Math.abs(h.diff)>=5?(h.diff>0?"#a32d2d":"#0c447c"):"#27500a"}}>{fmtP(h.diff)}</td>
-                    <td style={{padding:"7px 8px",color:h.pnlPct===null?"var(--color-text-secondary)":h.pnlPct<0?"#a32d2d":"#3b6d11",fontWeight:500}}>{h.pnlPct!=null?fmtP(h.pnlPct):"—"}</td>
+                    <td style={{padding:"7px 8px",color:h.pnlPct===null?"var(--text-dim)":h.pnlPct<0?"#a32d2d":"#3b6d11",fontWeight:500}}>{h.pnlPct!=null?fmtP(h.pnlPct):"—"}</td>
                     <td style={{padding:"7px 8px"}}><Badge c={aC} bg={aBg}>{act}</Badge></td>
                   </tr>
                 );
@@ -655,11 +655,11 @@ function RebalanceJudge({portfolio,vix}){
           {sells.length>0&&<Card>
             <div style={{fontSize:11,fontWeight:500,color:"#791f1f",marginBottom:".75rem"}}>매도 — 비중 초과 자산</div>
             {sells.map((h,i)=>{const key=`s${i}`;return(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<sells.length-1?"0.5px solid var(--color-border-tertiary)":"none",opacity:checked[key]?.5:1}}>
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<sells.length-1?"0.5px solid var(--border-glass)":"none",opacity:checked[key]?.5:1}}>
                 <input type="checkbox" checked={!!checked[key]} onChange={e=>setChecked(p=>({...p,[key]:e.target.checked}))} style={{width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
                 <div style={{flex:1}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:500,textDecoration:checked[key]?"line-through":"none"}}>{h.etf}</span><span style={{fontFamily:"monospace",fontSize:10,background:"var(--color-background-secondary)",padding:"1px 5px",borderRadius:3,color:"var(--color-text-secondary)"}}>{h.code}</span><Badge c="#791f1f" bg="#fcebeb">매도</Badge></div>
-                  <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6}}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:500,textDecoration:checked[key]?"line-through":"none"}}>{h.etf}</span><span style={{fontFamily:"monospace",fontSize:10,background:"var(--bg-main)",padding:"1px 5px",borderRadius:3,color:"var(--text-dim)"}}>{h.code}</span><Badge c="#791f1f" bg="#fcebeb">매도</Badge></div>
+                  <div style={{fontSize:11,color:"var(--text-dim)",lineHeight:1.6}}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원</div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:500,color:"#a32d2d"}}>-{fmt(h.actionAmt)}원</div></div>
               </div>
@@ -669,11 +669,11 @@ function RebalanceJudge({portfolio,vix}){
             <div style={{fontSize:11,fontWeight:500,color:"#0c447c",marginBottom:".75rem"}}>매수 — 비중 부족 자산</div>
             {vix>25&&<div style={{background:"#faeeda",borderRadius:8,padding:".75rem 1rem",fontSize:12,color:"#633806",marginBottom:"1rem"}}>VIX {vix.toFixed(1)} 불안 구간 — {vix>35?"3~5회":"2~3회"} 분할 매수 권장</div>}
             {buys.map((h,i)=>{const key=`b${i}`;const sp=vix>35?5:vix>25?3:1;return(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<buys.length-1?"0.5px solid var(--color-border-tertiary)":"none",opacity:checked[key]?.5:1}}>
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<buys.length-1?"0.5px solid var(--border-glass)":"none",opacity:checked[key]?.5:1}}>
                 <input type="checkbox" checked={!!checked[key]} onChange={e=>setChecked(p=>({...p,[key]:e.target.checked}))} style={{width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
                 <div style={{flex:1}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:500,textDecoration:checked[key]?"line-through":"none"}}>{h.etf}</span><span style={{fontFamily:"monospace",fontSize:10,background:"var(--color-background-secondary)",padding:"1px 5px",borderRadius:3,color:"var(--color-text-secondary)"}}>{h.code}</span><Badge c="#0c447c" bg="#e6f1fb">매수</Badge>{sp>1&&<Badge c="#633806" bg="#faeeda">{sp}회 분할</Badge>}</div>
-                  <div style={{fontSize:11,color:"var(--color-text-secondary)",lineHeight:1.6}}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원{sp>1?` · 1회당 약 ${fmt(Math.round(Math.abs(h.actionAmt)/sp/10000)*10000)}원`:""}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:500,textDecoration:checked[key]?"line-through":"none"}}>{h.etf}</span><span style={{fontFamily:"monospace",fontSize:10,background:"var(--bg-main)",padding:"1px 5px",borderRadius:3,color:"var(--text-dim)"}}>{h.code}</span><Badge c="#0c447c" bg="#e6f1fb">매수</Badge>{sp>1&&<Badge c="#633806" bg="#faeeda">{sp}회 분할</Badge>}</div>
+                  <div style={{fontSize:11,color:"var(--text-dim)",lineHeight:1.6}}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원{sp>1?` · 1회당 약 ${fmt(Math.round(Math.abs(h.actionAmt)/sp/10000)*10000)}원`:""}</div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:500,color:"#185fa5"}}>+{fmt(Math.abs(h.actionAmt))}원</div></div>
               </div>
@@ -682,7 +682,7 @@ function RebalanceJudge({portfolio,vix}){
           {holds.length>0&&<Card><div style={{fontSize:11,fontWeight:500,color:"#27500a",marginBottom:".75rem"}}>유지</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{holds.map((h,i)=><div key={i} style={{background:"#eaf3de",borderRadius:8,padding:".625rem .875rem",fontSize:12}}><span style={{fontWeight:500,color:"#27500a"}}>{h.etf.replace(" (H)","")}</span><span style={{color:"#3b6d11",marginLeft:8}}>{h.cur}%</span></div>)}</div></Card>}
           <Card accent={doneCount===totalActions&&totalActions>0?"#3b6d11":undefined}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-              <div><div style={{fontSize:13,fontWeight:500,marginBottom:3}}>실행 완료 체크</div><div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{doneCount} / {totalActions} 완료{doneCount===totalActions&&totalActions>0?" — 모든 주문 완료!":""}</div></div>
+              <div><div style={{fontSize:13,fontWeight:500,marginBottom:3}}>실행 완료 체크</div><div style={{fontSize:11,color:"var(--text-dim)"}}>{doneCount} / {totalActions} 완료{doneCount===totalActions&&totalActions>0?" — 모든 주문 완료!":""}</div></div>
               {doneCount===totalActions&&totalActions>0&&<div style={{background:"#eaf3de",borderRadius:8,padding:".75rem 1rem",fontSize:12,color:"#27500a",fontWeight:500}}>다음 리밸런싱 예정일: {new Date(Date.now()+required*86400000).toLocaleDateString("ko-KR")}</div>}
             </div>
           </Card>
@@ -733,19 +733,19 @@ function RetirementRoadmap({strategyId}){
 
   const SL=(label,val,set,min,max,step,extra)=>(
     <div style={{marginBottom:"1rem"}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{label}</span><span style={{fontSize:13,fontWeight:500}}>{fmt(val)}원</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"var(--text-dim)"}}>{label}</span><span style={{fontSize:13,fontWeight:500}}>{fmt(val)}원</span></div>
       <input type="range" min={min} max={max} step={step} value={val} onChange={e=>set(Number(e.target.value))} style={{width:"100%"}}/>
-      {extra&&<div style={{fontSize:10,color:"var(--color-text-secondary)",marginTop:3}}>{extra}</div>}
+      {extra&&<div style={{fontSize:10,color:"var(--text-dim)",marginTop:3}}>{extra}</div>}
     </div>
   );
   const SLA=(label,val,set,min,max,step,unit)=>(
     <div style={{marginBottom:"1rem"}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{label}</span><span style={{fontSize:13,fontWeight:500}}>{val}{unit}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"var(--text-dim)"}}>{label}</span><span style={{fontSize:13,fontWeight:500}}>{val}{unit}</span></div>
       <input type="range" min={min} max={max} step={step} value={val} onChange={e=>set(Number(e.target.value))} style={{width:"100%"}}/>
     </div>
   );
 
-  const SCN=[{k:"보수",r:sr.cons,b:bC,c:"#888780",bg:"var(--color-background-secondary)"},{k:"기본",r:sr.base,b:bB,c:"#185fa5",bg:"#e6f1fb"},{k:"낙관",r:sr.opt,b:bO,c:"#3b6d11",bg:"#eaf3de"}];
+  const SCN=[{k:"보수",r:sr.cons,b:bC,c:"#888780",bg:"var(--bg-main)"},{k:"기본",r:sr.base,b:bB,c:"#185fa5",bg:"#e6f1fb"},{k:"낙관",r:sr.opt,b:bO,c:"#3b6d11",bg:"#eaf3de"}];
 
   return(
     <div style={{display:"grid",gridTemplateColumns:"255px 1fr",gap:"1rem",alignItems:"start"}}>
@@ -769,7 +769,7 @@ function RetirementRoadmap({strategyId}){
         </Card>
         <Card>
           <ST>투자 전략</ST>
-          <select value={strat} onChange={e=>setStrat(e.target.value)} style={{width:"100%",padding:"7px 10px",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:12,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}>
+          <select value={strat} onChange={e=>setStrat(e.target.value)} style={{width:"100%",padding:"7px 10px",border:"0.5px solid var(--border-glass)",borderRadius:"var(--radius-md)",fontSize:12,background:"var(--bg-card)",color:"var(--text-main)",fontFamily:"var(--font-sans)"}}>
             {STRATEGIES.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,marginTop:"1rem"}}>
@@ -783,9 +783,9 @@ function RetirementRoadmap({strategyId}){
         <Card accent={ok?"#3b6d11":"#a32d2d"}>
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:4}}>필요 은퇴 자산 (목표)</div>
+              <div style={{fontSize:11,color:"var(--text-dim)",marginBottom:4}}>필요 은퇴 자산 (목표)</div>
               <div style={{fontSize:26,fontWeight:500,marginBottom:4}}>{fmt(target)}원</div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6}}>은퇴 후 {ryrs}년 × 순 생활비 {fmt(netNeed)}원/월 (물가 {fmtR(INF)}/년 · 연금 차감)</div>
+              <div style={{fontSize:12,color:"var(--text-dim)",lineHeight:1.6}}>은퇴 후 {ryrs}년 × 순 생활비 {fmt(netNeed)}원/월 (물가 {fmtR(INF)}/년 · 연금 차감)</div>
             </div>
             <div style={{background:ok?"#eaf3de":"#fcebeb",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",textAlign:"center",minWidth:120}}>
               <div style={{fontSize:11,color:ok?"#27500a":"#791f1f",fontWeight:600,marginBottom:4}}>{ok?"목표 달성 가능":"목표 미달"}</div>
@@ -793,7 +793,7 @@ function RetirementRoadmap({strategyId}){
               <div style={{fontSize:10,color:ok?"#27500a":"#791f1f",marginTop:3}}>기본 시나리오 기준</div>
             </div>
           </div>
-          <div style={{marginTop:"1rem",padding:".875rem",background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)"}}>
+          <div style={{marginTop:"1rem",padding:".875rem",background:"var(--bg-main)",borderRadius:"var(--radius-md)"}}>
             {wdCheck.ok?<div style={{fontSize:12,color:"#27500a",lineHeight:1.6}}>기본 시나리오: 은퇴 후 {ryrs}년({life}세)까지 자산 유지. 잔여 <strong>{fmt(wdCheck.rem)}원</strong></div>:<div style={{fontSize:12,color:"#a32d2d",lineHeight:1.6}}>기본 시나리오: 은퇴 후 약 <strong>{wdCheck.yr}년</strong> 후 자산 소진 예상. 납입 증액 또는 생활비 절감 필요.</div>}
           </div>
         </Card>
@@ -801,12 +801,12 @@ function RetirementRoadmap({strategyId}){
         <Card>
           <ST>시나리오별 예상 잔고 ({rAge}세 시점)</ST>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
-            {SCN.map(s=><div key={s.k} style={{background:s.bg,borderRadius:"var(--border-radius-md)",padding:"1rem",border:`0.5px solid ${s.c}40`}}><div style={{fontSize:10,color:s.c,fontWeight:600,marginBottom:3}}>{s.k} ({fmtR(s.r)}/년)</div><div style={{fontSize:18,fontWeight:500,color:s.c,marginBottom:3}}>{fmt(s.b)}</div><div style={{fontSize:11,color:s.b>=target?"#27500a":"#a32d2d",fontWeight:500}}>목표 대비 {s.b>=target?"+":""}{fmt(s.b-target)}</div></div>)}
+            {SCN.map(s=><div key={s.k} style={{background:s.bg,borderRadius:"var(--radius-md)",padding:"1rem",border:`0.5px solid ${s.c}40`}}><div style={{fontSize:10,color:s.c,fontWeight:600,marginBottom:3}}>{s.k} ({fmtR(s.r)}/년)</div><div style={{fontSize:18,fontWeight:500,color:s.c,marginBottom:3}}>{fmt(s.b)}</div><div style={{fontSize:11,color:s.b>=target?"#27500a":"#a32d2d",fontWeight:500}}>목표 대비 {s.b>=target?"+":""}{fmt(s.b-target)}</div></div>)}
           </div>
           <div style={{overflowX:"auto"}}>
             <svg viewBox={`0 0 ${CW} ${CH+22}`} width="100%" style={{display:"block"}}>
-              {[0,.25,.5,.75,1].map((t,i)=>{const v=maxV*t,y=ty(v);return(<g key={i}><line x1={PAD} y1={y} x2={CW-8} y2={y} stroke="rgba(128,128,128,0.1)" strokeWidth={1}/><text x={PAD-4} y={y+4} textAnchor="end" fontSize={8} fill="var(--color-text-secondary)">{fmt(v)}</text></g>);})}
-              {[0,.25,.5,.75,1].map((t,i)=>{const yr=Math.round(t*yrs);return<text key={i} x={tx(yr)} y={CH+13} textAnchor="middle" fontSize={8} fill="var(--color-text-secondary)">{cAge+yr}세</text>;})}
+              {[0,.25,.5,.75,1].map((t,i)=>{const v=maxV*t,y=ty(v);return(<g key={i}><line x1={PAD} y1={y} x2={CW-8} y2={y} stroke="rgba(128,128,128,0.1)" strokeWidth={1}/><text x={PAD-4} y={y+4} textAnchor="end" fontSize={8} fill="var(--text-dim)">{fmt(v)}</text></g>);})}
+              {[0,.25,.5,.75,1].map((t,i)=>{const yr=Math.round(t*yrs);return<text key={i} x={tx(yr)} y={CH+13} textAnchor="middle" fontSize={8} fill="var(--text-dim)">{cAge+yr}세</text>;})}
               <line x1={PAD} y1={tgY} x2={CW-8} y2={tgY} stroke="#a32d2d" strokeWidth={1.5} strokeDasharray="5,3"/>
               <text x={CW-10} y={tgY-4} textAnchor="end" fontSize={8} fill="#a32d2d">목표 {fmt(target)}</text>
               <path d={ap(simC)} fill="#88878015"/>
@@ -814,7 +814,7 @@ function RetirementRoadmap({strategyId}){
               <path d={lp(simB)} fill="none" stroke="#185fa5" strokeWidth={2.5}/>
               <path d={lp(simO)} fill="none" stroke="#3b6d11" strokeWidth={1.5} strokeDasharray="4,3"/>
               {[["보수","#888780","4,3"],["기본","#185fa5",""],["낙관","#3b6d11","4,3"],["목표","#a32d2d","5,3"]].map(([l,c,d],i)=>(
-                <g key={l} transform={`translate(${PAD+i*85},${CH+21})`}><line x1={0} y1={0} x2={14} y2={0} stroke={c} strokeWidth={l==="기본"?2.5:1.5} strokeDasharray={d}/><text x={18} y={4} fontSize={8} fill="var(--color-text-secondary)">{l}</text></g>
+                <g key={l} transform={`translate(${PAD+i*85},${CH+21})`}><line x1={0} y1={0} x2={14} y2={0} stroke={c} strokeWidth={l==="기본"?2.5:1.5} strokeDasharray={d}/><text x={18} y={4} fontSize={8} fill="var(--text-dim)">{l}</text></g>
               ))}
             </svg>
           </div>
@@ -823,15 +823,15 @@ function RetirementRoadmap({strategyId}){
         {!ok&&<Card>
           <ST>목표 달성을 위한 조정 방안</ST>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{background:"#e6f1fb",borderRadius:"var(--border-radius-md)",padding:"1rem",borderLeft:"3px solid #185fa5"}}>
+            <div style={{background:"#e6f1fb",borderRadius:"var(--radius-md)",padding:"1rem",borderLeft:"3px solid #185fa5"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontSize:12,fontWeight:600,color:"#0c447c"}}>방안 ① — 월 납입액 증액</div><div style={{fontSize:16,fontWeight:500,color:"#185fa5"}}>{fmt(nc)}원/월</div></div>
               <div style={{fontSize:11,color:"#0c447c",lineHeight:1.6}}>현재 {fmt(contrib)}원 → <strong>{fmt(nc)}원/월</strong>으로 증액 시 목표 달성. 증액분: {fmt(nc-contrib)}원/월</div>
             </div>
-            <div style={{background:"#faeeda",borderRadius:"var(--border-radius-md)",padding:"1rem",borderLeft:"3px solid #ba7517"}}>
+            <div style={{background:"#faeeda",borderRadius:"var(--radius-md)",padding:"1rem",borderLeft:"3px solid #ba7517"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontSize:12,fontWeight:600,color:"#633806"}}>방안 ② — 은퇴 시점 연장</div><div style={{fontSize:16,fontWeight:500,color:"#ba7517"}}>{extAge}세 은퇴</div></div>
               <div style={{fontSize:11,color:"#633806",lineHeight:1.6}}>현재 납입 유지 시 <strong>{extAge}세</strong>에 목표 달성 ({extAge>rAge?extAge-rAge+"년 연장":"이미 달성"}).</div>
             </div>
-            <div style={{background:"#eaf3de",borderRadius:"var(--border-radius-md)",padding:"1rem",borderLeft:"3px solid #3b6d11"}}>
+            <div style={{background:"#eaf3de",borderRadius:"var(--radius-md)",padding:"1rem",borderLeft:"3px solid #3b6d11"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><div style={{fontSize:12,fontWeight:600,color:"#27500a"}}>방안 ③ — 현실 목표 재설정</div><div style={{fontSize:16,fontWeight:500,color:"#3b6d11"}}>{fmt(Math.round(bB/ryrs/12/1000)*1000)}원/월</div></div>
               <div style={{fontSize:11,color:"#27500a",lineHeight:1.6}}>현재 납입 유지 시 {fmt(bB)}원 기준 인출 가능. 연금 포함 <strong>{fmt(Math.round(bB/ryrs/12/1000)*1000+pension)}원/월</strong>.</div>
             </div>
@@ -850,7 +850,7 @@ function RetirementRoadmap({strategyId}){
           <ST>연간 세액공제 현황 (IRP+연금저축 합산)</ST>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
             {[["연 납입액",`${fmt(contrib*12)}원`,null],["세액공제 한도","900만원",null],["환급 예상",`${fmt(Math.round(Math.min(contrib*12,9000000)*0.165/10000)*10000)}원`,contrib*12>=9000000?"한도 최대 활용 ✓":"납입 확대 검토"]].map(([l,v,s2])=>(
-              <div key={l} style={{background:"var(--color-background-secondary)",borderRadius:8,padding:".875rem",textAlign:"center"}}><div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3}}>{l}</div><div style={{fontSize:15,fontWeight:500}}>{v}</div>{s2&&<div style={{fontSize:10,color:contrib*12>=9000000?"#27500a":"#ba7517",marginTop:2,fontWeight:500}}>{s2}</div>}</div>
+              <div key={l} style={{background:"var(--bg-main)",borderRadius:8,padding:".875rem",textAlign:"center"}}><div style={{fontSize:11,color:"var(--text-dim)",marginBottom:3}}>{l}</div><div style={{fontSize:15,fontWeight:500}}>{v}</div>{s2&&<div style={{fontSize:10,color:contrib*12>=9000000?"#27500a":"#ba7517",marginTop:2,fontWeight:500}}>{s2}</div>}</div>
             ))}
           </div>
         </Card>
@@ -911,19 +911,19 @@ function MonthlyReport({portfolio,vix,strategy}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:"1rem"}}>
           <div>
             <div style={{fontSize:14,fontWeight:500,marginBottom:3}}>{month} 월간 포트폴리오 리포트</div>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>AI 컨설팅용 구조화 리포트 — PDF로 저장 후 ChatGPT · Gemini · Claude에 첨부</div>
+            <div style={{fontSize:11,color:"var(--text-dim)"}}>AI 컨설팅용 구조화 리포트 — PDF로 저장 후 ChatGPT · Gemini · Claude에 첨부</div>
           </div>
           <Btn danger onClick={print}>PDF 출력</Btn>
         </div>
-        <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"1.25rem",fontSize:12,lineHeight:1.9}}>
+        <div style={{background:"var(--bg-main)",borderRadius:"var(--radius-md)",padding:"1.25rem",fontSize:12,lineHeight:1.9}}>
           <div style={{fontSize:15,fontWeight:500,marginBottom:".5rem"}}>{month} 월간 포트폴리오 리포트</div>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:"1rem"}}>생성일: {now.toLocaleString("ko-KR")} | 연금 포트폴리오 파일럿 v4.0</div>
+          <div style={{fontSize:11,color:"var(--text-dim)",marginBottom:"1rem"}}>생성일: {now.toLocaleString("ko-KR")} | 연금 포트폴리오 파일럿 v4.0</div>
           <div style={{fontWeight:500,marginBottom:5,fontSize:13}}>1. 포트폴리오 현황</div>
-          <div style={{color:"var(--color-text-secondary)",marginBottom:"1rem"}}>총 평가금액: <strong style={{color:"var(--color-text-primary)"}}>{fmt(total)}원</strong> · 선택 전략: <strong style={{color:"var(--color-text-primary)"}}>{s.name}</strong> · MDD: {portfolio.mdd.toFixed(1)}%</div>
+          <div style={{color:"var(--text-dim)",marginBottom:"1rem"}}>총 평가금액: <strong style={{color:"var(--text-main)"}}>{fmt(total)}원</strong> · 선택 전략: <strong style={{color:"var(--text-main)"}}>{s.name}</strong> · MDD: {portfolio.mdd.toFixed(1)}%</div>
           <div style={{fontWeight:500,marginBottom:5,fontSize:13}}>2. 자산군별 현황</div>
-          <div style={{color:"var(--color-text-secondary)",marginBottom:"1rem"}}>{holdings.map(h=>`${h.etf}: ${h.cur}% (목표 ${h.target}%, 편차 ${h.cur-h.target>=0?"+":""}${(h.cur-h.target).toFixed(1)}%p)`).join(" / ")}</div>
+          <div style={{color:"var(--text-dim)",marginBottom:"1rem"}}>{holdings.map(h=>`${h.etf}: ${h.cur}% (목표 ${h.target}%, 편차 ${h.cur-h.target>=0?"+":""}${(h.cur-h.target).toFixed(1)}%p)`).join(" / ")}</div>
           <div style={{fontWeight:500,marginBottom:5,fontSize:13}}>3. AI 컨설팅 질의 가이드</div>
-          <div style={{color:"var(--color-text-secondary)",lineHeight:1.8}}>
+          <div style={{color:"var(--text-dim)",lineHeight:1.8}}>
             이 리포트를 AI에 첨부한 뒤:<br/>
             · "현재 포트폴리오 리스크 분석 및 리밸런싱 우선순위"<br/>
             · "전략 대비 편차 큰 자산부터 조정 금액 계산"<br/>
@@ -961,12 +961,12 @@ function CompareWeights({portfolio}){
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:".875rem",flexWrap:"wrap",gap:8}}>
           <ST>벤치마크 전략 선택</ST>
           <select value={benchKey} onChange={e=>setBenchKey(e.target.value)}
-            style={{padding:"6px 10px",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:12,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}>
+            style={{padding:"6px 10px",border:"0.5px solid var(--border-glass)",borderRadius:"var(--radius-md)",fontSize:12,background:"var(--bg-card)",color:"var(--text-main)",fontFamily:"var(--font-sans)"}}>
             {STRATEGIES.filter(s=>s.type==="fixed").map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-        <div style={{display:"flex",gap:12,fontSize:11,color:"var(--color-text-secondary)",marginBottom:"1rem"}}>
-          <span><span style={{display:"inline-block",width:10,height:4,background:"var(--color-text-primary)",opacity:.3,marginRight:4,verticalAlign:"middle"}}/>벤치마크 목표</span>
+        <div style={{display:"flex",gap:12,fontSize:11,color:"var(--text-dim)",marginBottom:"1rem"}}>
+          <span><span style={{display:"inline-block",width:10,height:4,background:"var(--text-main)",opacity:.3,marginRight:4,verticalAlign:"middle"}}/>벤치마크 목표</span>
         </div>
         {allCls.map((cls,i)=>{
           const h=holdings.find(x=>x.cls===cls);
@@ -976,10 +976,10 @@ function CompareWeights({portfolio}){
           const dc=Math.abs(diff)>=5?(diff>0?"#a32d2d":"#0c447c"):"#27500a";
           return(
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-              <div style={{fontSize:11,minWidth:120,color:"var(--color-text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls}</div>
-              <div style={{flex:1,height:7,background:"var(--color-background-secondary)",borderRadius:4,overflow:"hidden",position:"relative",minWidth:60}}>
+              <div style={{fontSize:11,minWidth:120,color:"var(--text-dim)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls}</div>
+              <div style={{flex:1,height:7,background:"var(--bg-main)",borderRadius:4,overflow:"hidden",position:"relative",minWidth:60}}>
                 <div style={{height:"100%",width:`${Math.min(cur,100)}%`,background:ASSET_COLORS[cls]||"#888",borderRadius:4}}/>
-                {bm>0&&<div style={{position:"absolute",top:0,left:`${Math.min(bm,100)}%`,width:2,height:"100%",background:"var(--color-text-primary)",opacity:.35}}/>}
+                {bm>0&&<div style={{position:"absolute",top:0,left:`${Math.min(bm,100)}%`,width:2,height:"100%",background:"var(--text-main)",opacity:.35}}/>}
               </div>
               <span style={{fontSize:11,fontWeight:500,minWidth:30,textAlign:"right"}}>{cur.toFixed(1)}%</span>
               <span style={{fontSize:11,fontWeight:500,minWidth:44,textAlign:"right",color:dc}}>{diff>=0?"+":""}{diff.toFixed(1)}%p</span>
@@ -992,24 +992,24 @@ function CompareWeights({portfolio}){
         <Card>
           <ST>리밸런싱 조정 금액 (5%p 이상 이탈)</ST>
           {sells.map((h,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:12}}>
-              <div><span style={{fontWeight:500}}>{h.etf}</span><span style={{fontSize:10,color:"var(--color-text-secondary)",marginLeft:6}}>{h.cls}</span></div>
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"0.5px solid var(--border-glass)",fontSize:12}}>
+              <div><span style={{fontWeight:500}}>{h.etf}</span><span style={{fontSize:10,color:"var(--text-dim)",marginLeft:6}}>{h.cls}</span></div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{color:"var(--color-text-secondary)"}}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
+                <span style={{color:"var(--text-dim)"}}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
                 <Badge c="#791f1f" bg="#fcebeb">매도 {fmt(h.actionAmt)}원</Badge>
               </div>
             </div>
           ))}
           {buys.map((h,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:12}}>
-              <div><span style={{fontWeight:500}}>{h.etf}</span><span style={{fontSize:10,color:"var(--color-text-secondary)",marginLeft:6}}>{h.cls}</span></div>
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"0.5px solid var(--border-glass)",fontSize:12}}>
+              <div><span style={{fontWeight:500}}>{h.etf}</span><span style={{fontSize:10,color:"var(--text-dim)",marginLeft:6}}>{h.cls}</span></div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{color:"var(--color-text-secondary)"}}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
+                <span style={{color:"var(--text-dim)"}}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
                 <Badge c="#0c447c" bg="#e6f1fb">매수 {fmt(Math.abs(h.actionAmt))}원</Badge>
               </div>
             </div>
           ))}
-          <div style={{marginTop:"1rem",padding:".875rem",background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6}}>
+          <div style={{marginTop:"1rem",padding:".875rem",background:"var(--bg-main)",borderRadius:"var(--radius-md)",fontSize:12,color:"var(--text-dim)",lineHeight:1.6}}>
             총 매도: {fmt(sells.reduce((s,h)=>s+h.actionAmt,0))}원 →
             총 매수: {fmt(Math.abs(buys.reduce((s,h)=>s+h.actionAmt,0)))}원
           </div>
@@ -1061,14 +1061,14 @@ function AlertsPanel({portfolio,onStopLossChange,onMddChange}){
         <Card style={{marginBottom:0}}>
           <ST>손절 기준 설정</ST>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:"1rem"}}>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>자산 수익률이</span>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>자산 수익률이</span>
             <input type="number" value={slVal} min={-50} max={0} step={1}
               onChange={e=>setSlVal(Number(e.target.value))}
-              style={{width:66,textAlign:"right",padding:"5px 8px",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}/>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>% 이하 시 경고</span>
+              style={{width:66,textAlign:"right",padding:"5px 8px",border:"0.5px solid var(--border-glass)",borderRadius:"var(--radius-md)",fontSize:13,background:"var(--bg-card)",color:"var(--text-main)",fontFamily:"var(--font-sans)"}}/>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>% 이하 시 경고</span>
           </div>
           <Btn danger sm onClick={()=>onStopLossChange&&onStopLossChange(slVal)}>저장</Btn>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginTop:10,lineHeight:1.6}}>
+          <div style={{fontSize:11,color:"var(--text-dim)",marginTop:10,lineHeight:1.6}}>
             원가 기록은 구글 시트 [종목 입력] F열에 입력해야 수익률 계산이 가능합니다.
           </div>
         </Card>
@@ -1076,14 +1076,14 @@ function AlertsPanel({portfolio,onStopLossChange,onMddChange}){
         <Card style={{marginBottom:0}}>
           <ST>MDD 제한선 설정</ST>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:"1rem"}}>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>포트폴리오 MDD</span>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>포트폴리오 MDD</span>
             <input type="number" value={mddVal} min={-50} max={0} step={1}
               onChange={e=>setMddVal(Number(e.target.value))}
-              style={{width:66,textAlign:"right",padding:"5px 8px",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}/>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>% 이하 시 경고</span>
+              style={{width:66,textAlign:"right",padding:"5px 8px",border:"0.5px solid var(--border-glass)",borderRadius:"var(--radius-md)",fontSize:13,background:"var(--bg-card)",color:"var(--text-main)",fontFamily:"var(--font-sans)"}}/>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>% 이하 시 경고</span>
           </div>
           <Btn sm onClick={()=>onMddChange&&onMddChange(mddVal)}>저장</Btn>
-          <div style={{fontSize:11,color:"var(--color-text-secondary)",marginTop:10,lineHeight:1.6}}>
+          <div style={{fontSize:11,color:"var(--text-dim)",marginTop:10,lineHeight:1.6}}>
             현재 MDD: <strong>{portfolio.mdd.toFixed(1)}%</strong> · 고점 대비 낙폭
           </div>
         </Card>
@@ -1112,7 +1112,7 @@ function HistoryPanel({portfolio}){
   return(
     <div>
       {history.length<2?(
-        <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-lg)",padding:"3rem",textAlign:"center",fontSize:13,color:"var(--color-text-secondary)"}}>
+        <div style={{background:"var(--bg-main)",borderRadius:"var(--border-radius-lg)",padding:"3rem",textAlign:"center",fontSize:13,color:"var(--text-dim)"}}>
           시트를 연결하고 잔고를 2회 이상 입력하면 변동 추이가 표시됩니다.
         </div>
       ):(
@@ -1123,10 +1123,10 @@ function HistoryPanel({portfolio}){
               <svg viewBox={`0 0 ${CW} ${CH+20}`} width="100%" style={{display:"block"}}>
                 {[0,.25,.5,.75,1].map((t,i)=>{
                   const v=minV+(maxV-minV)*t, y=ty(v);
-                  return(<g key={i}><line x1={PAD} y1={y} x2={CW-10} y2={y} stroke="rgba(128,128,128,0.1)" strokeWidth={1}/><text x={PAD-4} y={y+4} textAnchor="end" fontSize={9} fill="var(--color-text-secondary)">{fmt(v)}</text></g>);
+                  return(<g key={i}><line x1={PAD} y1={y} x2={CW-10} y2={y} stroke="rgba(128,128,128,0.1)" strokeWidth={1}/><text x={PAD-4} y={y+4} textAnchor="end" fontSize={9} fill="var(--text-dim)">{fmt(v)}</text></g>);
                 })}
                 {history.map((h,i)=>(
-                  <text key={i} x={tx(i)} y={CH+14} textAnchor="middle" fontSize={9} fill="var(--color-text-secondary)">{h.date}</text>
+                  <text key={i} x={tx(i)} y={CH+14} textAnchor="middle" fontSize={9} fill="var(--text-dim)">{h.date}</text>
                 ))}
                 <path d={ap} fill="#185fa515"/>
                 <path d={lp} fill="none" stroke="#185fa5" strokeWidth={2.5}/>
@@ -1141,11 +1141,11 @@ function HistoryPanel({portfolio}){
             <ST>최근 스냅샷</ST>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead>
-                <tr style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-                  <th style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--color-text-secondary)",fontWeight:600}}>날짜</th>
-                  <th style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--color-text-secondary)",fontWeight:600}}>전략</th>
-                  <th style={{textAlign:"right",padding:"5px 8px",fontSize:11,color:"var(--color-text-secondary)",fontWeight:600}}>총 평가금액</th>
-                  <th style={{textAlign:"right",padding:"5px 8px",fontSize:11,color:"var(--color-text-secondary)",fontWeight:600}}>전월 대비</th>
+                <tr style={{borderBottom:"0.5px solid var(--border-glass)"}}>
+                  <th style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--text-dim)",fontWeight:600}}>날짜</th>
+                  <th style={{textAlign:"left",padding:"5px 8px",fontSize:11,color:"var(--text-dim)",fontWeight:600}}>전략</th>
+                  <th style={{textAlign:"right",padding:"5px 8px",fontSize:11,color:"var(--text-dim)",fontWeight:600}}>총 평가금액</th>
+                  <th style={{textAlign:"right",padding:"5px 8px",fontSize:11,color:"var(--text-dim)",fontWeight:600}}>전월 대비</th>
                 </tr>
               </thead>
               <tbody>
@@ -1153,11 +1153,11 @@ function HistoryPanel({portfolio}){
                   const prev=arr[i+1];
                   const chg=prev&&prev.total>0?((h.total-prev.total)/prev.total*100):null;
                   return(
-                    <tr key={i} style={{borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
+                    <tr key={i} style={{borderBottom:"0.5px solid var(--border-glass)"}}>
                       <td style={{padding:"7px 8px",fontWeight:500}}>{h.date}</td>
-                      <td style={{padding:"7px 8px",color:"var(--color-text-secondary)",fontSize:11}}>{h.strategy||"—"}</td>
+                      <td style={{padding:"7px 8px",color:"var(--text-dim)",fontSize:11}}>{h.strategy||"—"}</td>
                       <td style={{padding:"7px 8px",textAlign:"right",fontWeight:500}}>{fmt(h.total||0)}원</td>
-                      <td style={{padding:"7px 8px",textAlign:"right",color:chg===null?"var(--color-text-secondary)":chg>=0?"#3b6d11":"#a32d2d",fontWeight:500}}>
+                      <td style={{padding:"7px 8px",textAlign:"right",color:chg===null?"var(--text-dim)":chg>=0?"#3b6d11":"#a32d2d",fontWeight:500}}>
                         {chg===null?"—":`${chg>=0?"+":""}${chg.toFixed(2)}%`}
                       </td>
                     </tr>
@@ -1172,16 +1172,16 @@ function HistoryPanel({portfolio}){
               <ST>자산군별 비중 추이 (최근 {recent.length}회)</ST>
               {allCls.filter(cls=>recent.some(h=>(h.weights||{})[cls]>0)).map(cls=>(
                 <div key={cls} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-                  <div style={{fontSize:11,minWidth:100,color:"var(--color-text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls}</div>
+                  <div style={{fontSize:11,minWidth:100,color:"var(--text-dim)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cls}</div>
                   <div style={{flex:1,display:"flex",gap:2}}>
                     {recent.map((h,i)=>{
                       const pct=(h.weights||{})[cls]||0;
                       return(
                         <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                          <div style={{width:"100%",height:24,background:"var(--color-background-secondary)",borderRadius:3,overflow:"hidden",display:"flex",alignItems:"flex-end"}}>
+                          <div style={{width:"100%",height:24,background:"var(--bg-main)",borderRadius:3,overflow:"hidden",display:"flex",alignItems:"flex-end"}}>
                             <div style={{width:"100%",height:`${Math.min(pct/30*100,100)}%`,background:ASSET_COLORS[cls]||"#888",borderRadius:2}}/>
                           </div>
-                          <span style={{fontSize:9,color:"var(--color-text-secondary)"}}>{pct.toFixed(0)}%</span>
+                          <span style={{fontSize:9,color:"var(--text-dim)"}}>{pct.toFixed(0)}%</span>
                         </div>
                       );
                     })}
@@ -1189,7 +1189,7 @@ function HistoryPanel({portfolio}){
                 </div>
               ))}
               <div style={{display:"flex",gap:4,marginTop:8}}>
-                {recent.map((h,i)=><div key={i} style={{flex:1,textAlign:"center",fontSize:9,color:"var(--color-text-secondary)"}}>{h.date}</div>)}
+                {recent.map((h,i)=><div key={i} style={{flex:1,textAlign:"center",fontSize:9,color:"var(--text-dim)"}}>{h.date}</div>)}
               </div>
             </Card>
           )}
@@ -1866,7 +1866,7 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
       <Card>
         <ST>계정 정보</ST>
         <div style={{ marginBottom: "1.5rem" }}>
-          <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 4 }}>로그인 이메일</div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 4 }}>로그인 이메일</div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{user.email}</div>
         </div>
         <div style={{ background: "#eaf3de", padding: "1rem", borderRadius: 8, marginBottom: "1.5rem", fontSize: 12, color: "#27500a", lineHeight: 1.6 }}>
@@ -1884,12 +1884,12 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
         <input 
           type="email" placeholder="이메일" value={email} 
           onChange={e => setEmail(e.target.value)}
-          style={{ padding: "10px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} 
+          style={{ padding: "10px 12px", borderRadius: 8, border: "0.5px solid var(--border-glass)", background: "var(--bg-card)", color: "var(--text-main)" }} 
         />
         <input 
           type="password" placeholder="비밀번호" value={password} 
           onChange={e => setPassword(e.target.value)}
-          style={{ padding: "10px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} 
+          style={{ padding: "10px 12px", borderRadius: 8, border: "0.5px solid var(--border-glass)", background: "var(--bg-card)", color: "var(--text-main)" }} 
         />
         <Btn primary onClick={() => isSign ? onSignUp(email, password) : onLogin(email, password)} disabled={isSaving}>
           {isSaving ? "처리 중..." : (isSign ? "가입하기" : "로그인")}
@@ -1897,7 +1897,7 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
         <div style={{ textAlign: "center", marginTop: 10 }}>
           <button 
             onClick={() => setIsSign(!isSign)} 
-            style={{ fontSize: 12, background: "none", border: "none", color: "var(--color-text-secondary)", cursor: "pointer", textDecoration: "underline" }}
+            style={{ fontSize: 12, background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", textDecoration: "underline" }}
           >
             {isSign ? "이미 계정이 있으신가요? 로그인" : "계정이 없으신가요? 회원가입"}
           </button>
@@ -1928,17 +1928,17 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
   }, [user]);
 
   return(
-    <div style={{fontFamily:"var(--font-sans)",color:"var(--color-text-primary)"}}>
+    <div style={{fontFamily:"var(--font-sans)",color:"var(--text-main)"}}>
       {/* 앱 헤더 */}
-      <div style={{background:"var(--color-background-primary)",borderBottom:"0.5px solid var(--color-border-tertiary)",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
+      <div style={{background:"var(--bg-card)",borderBottom:"0.5px solid var(--border-glass)",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
         <div style={{maxWidth:940,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
           <div>
             <div style={{fontSize:17,fontWeight:500,marginBottom:2}}>연금 포트폴리오 파일럿</div>
-            <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>삼성증권 IRP/연금저축 · Supabase 클라우드 DB · 은퇴 목표 관리</div>
+            <div style={{fontSize:11,color:"var(--text-dim)"}}>삼성증권 IRP/연금저축 · Supabase 클라우드 DB · 은퇴 목표 관리</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {isDemo&&<Badge c="#633806" bg="#faeeda">데모 모드</Badge>}
-            <Badge c={vixLoading?"var(--color-text-secondary)":"#27500a"} bg={vixLoading?"var(--color-background-secondary)":"#eaf3de"}>VIX {vixLoading?"…":vix.toFixed(1)}</Badge>
+            <Badge c={vixLoading?"var(--text-dim)":"#27500a"} bg={vixLoading?"var(--bg-main)":"#eaf3de"}>VIX {vixLoading?"…":vix.toFixed(1)}</Badge>
             <Btn sm onClick={()=>setTab("account")}>{user?"계정 관리":"로그인"}</Btn>
             <Btn sm onClick={()=>setTab("report")} style={{background:"var(--color-primary)", color:"#fff", border:"none"}}>월간 리포트 PDF</Btn>
           </div>
@@ -1947,9 +1947,9 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
 
       <div style={{maxWidth:940,margin:"0 auto",padding:"0 1rem"}}>
         {/* 탭 */}
-        <div className="no-scrollbar" style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--color-border-tertiary)",marginBottom:"1.5rem",overflowX:"auto"}}>
+        <div className="no-scrollbar" style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--border-glass)",marginBottom:"1.5rem",overflowX:"auto"}}>
           {TABS.map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 15px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:tab===t.id?"var(--color-text-primary)":"var(--color-text-secondary)",borderBottom:`2px solid ${tab===t.id?"var(--color-text-primary)":"transparent"}`,fontWeight:tab===t.id?500:400,fontFamily:"var(--font-sans)",marginBottom:-1,whiteSpace:"nowrap"}}>
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 15px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:tab===t.id?"var(--text-main)":"var(--text-dim)",borderBottom:`2px solid ${tab===t.id?"var(--text-main)":"transparent"}`,fontWeight:tab===t.id?500:400,fontFamily:"var(--font-sans)",marginBottom:-1,whiteSpace:"nowrap"}}>
               {t.label}
             </button>
           ))}
