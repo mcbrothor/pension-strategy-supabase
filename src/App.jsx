@@ -1199,12 +1199,11 @@ function HistoryPanel({portfolio}){
   );
 }
 
-// ─── 4-10. 종목 입력 ──────────────────────────────────────────────────────────
+// ─── 4-10. 종목 입력 (프리미엄 UI) ──────────────────────────────────────────
 function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confirmAction }) {
   const [items, setItems] = useState([]);
   const [saveDate, setSaveDate] = useState(new Date().toISOString().split("T")[0]);
   const [isFetching, setIsFetching] = useState(false);
-
   const [prevQtys, setPrevQtys] = useState({});
 
   useEffect(() => {
@@ -1232,22 +1231,15 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
   const addItem = () => setItems([...items, { ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]);
   const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
 
-  // 실시간 시세 동기화 함수 (한국투자증권 KIS API 연동)
   async function syncPrices() {
-    const tickers = items
-      .map(it => String(it.ticker).trim())
-      .filter(t => t && t.length >= 2); 
-    
-    if (tickers.length === 0) return alert("시세를 조회할 티커(종목코드)가 없습니다.");
-
+    const tickers = items.map(it => String(it.ticker).trim()).filter(t => t && t.length >= 2); 
+    if (tickers.length === 0) return alert("조회할 티커가 없습니다.");
     setIsFetching(true);
     let successCount = 0;
     try {
       const results = await Promise.all(tickers.map(async (ticker) => {
         try {
-          // 내부 서버리스 API 프록시 호출
           const res = await fetch(`/api/kis-price?ticker=${ticker}`);
-          
           if (res.ok) {
             const data = await res.json();
             if (typeof data.price === "number" && data.price > 0) {
@@ -1255,183 +1247,197 @@ function EntryPanel({ latestTickers, krEtfs, tickerMap, onSave, isSaving, confir
               return { ticker, price: data.price };
             }
           }
-        } catch (e) {
-          console.warn(`${ticker} KIS API 조회 실패:`, e.message);
-        }
+        } catch (e) { console.warn(e.message); }
         return null;
       }));
-
       const priceMap = {};
       results.forEach(r => { if (r) priceMap[r.ticker] = r.price; });
-
       setItems(prev => prev.map(it => {
-        const p = priceMap[it.ticker].price || priceMap[it.ticker]; // map 구조에 따라 유연하게 처리
+        const p = priceMap[it.ticker];
         if (p) {
           const q = Number(it.quantity) || 0;
           return { ...it, currentPrice: p, amount: q * p };
         }
         return it;
       }));
-
-      if (successCount > 0) {
-        alert(`한국투자증권 API를 통해 총 ${successCount}개 항목의 현재가를 성공적으로 동기화했습니다.`);
-      } else {
-        alert("시세를 불러오는 데 실패했습니다. [계정 설정]에서 KIS API 키가 올바르게 설정되었는지 확인해 주세요.");
-      }
-    } catch (e) {
-      console.error("KIS Sync Error:", e);
-      alert("시세 동기화 중 오류가 발생했습니다.");
-    }
+      if (successCount > 0) alert(`KIS API를 통해 ${successCount}개 종목 동기화 완료.`);
+    } catch (e) { console.error(e); }
     setIsFetching(false);
   }
 
-  const clearAll = () => {
-    confirmAction(
-      "입력 내용 초기화",
-      "현재 입력된 모든 종목과 금액 정보를 삭제하시겠습니까? 이 동작은 되돌릴 수 없습니다.",
-      () => setItems([{ ticker: "", name: "", assetClass: "", quantity: 0, buyPrice: 0, currentPrice: 0, amount: 0, costAmt: 0 }])
-    );
-  };
-  
+  const clearAll = () => confirmAction("초기화", "모든 내용을 삭제하시겠습니까?", () => setItems([{ ticker: "", name: "", assetClass: "", quantity: 0, currentPrice: 0, amount: 0, costAmt: 0 }]));
+
   const updateItem = (idx, field, val) => {
     const next = [...items];
     const item = { ...next[idx], [field]: val };
-
-    // 자동 매핑 로직: 종목명을 선택했을 때 티커와 자산군 자동 입력
     if (field === "name") {
       const matched = krEtfs.find(e => e.name === val);
-      if (matched) {
-        item.ticker = matched.ticker;
-        item.assetClass = matched.assetClass;
-      }
+      if (matched) { item.ticker = matched.ticker; item.assetClass = matched.assetClass; }
     } else if (field === "ticker") {
       const matched = krEtfs.find(e => e.ticker === val);
-      if (matched) {
-        item.name = matched.name;
-        item.assetClass = matched.assetClass;
-      }
+      if (matched) { item.name = matched.name; item.assetClass = matched.assetClass; }
     }
-
-    // 자동 계산 로직
     const q = Number(item.quantity) || 0;
     const cp = Number(item.currentPrice) || 0;
-
-    if (cp > 0) {
-      item.amount = q * cp;
-    }
-
+    if (cp > 0) item.amount = q * cp;
     next[idx] = item;
     setItems(next);
   };
 
   const totalAmt = items.reduce((s, h) => s + (Number(h.amount) || 0), 0);
+  const totalPrevAmt = items.reduce((s, h) => s + ((prevQtys[h.ticker] || 0) * (Number(h.currentPrice) || 0)), 0);
+  const diffAmt = totalAmt - totalPrevAmt;
+
+  // 자산배분 데이터 계산 (도넛 차트용)
+  const allocation = items.reduce((acc, it) => {
+    const cls = it.assetClass || "기타";
+    const amt = Number(it.amount) || 0;
+    if (amt > 0) acc[cls] = (acc[cls] || 0) + amt;
+    return acc;
+  }, {});
+  const sortedAlloc = Object.entries(allocation).sort((a,b) => b[1]-a[1]);
 
   return (
-    <div>
-      <Card>
-        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"1.5rem",flexWrap:"wrap",gap:15}}>
+    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      {/* 🚀 상단 요약 카드 그리드 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20, marginBottom: 24 }}>
+        <div className="glass-panel stat-card">
+          <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>총 평가금액 합계</div>
+          <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, letterSpacing: "-0.02em" }}>{fmt(totalAmt)}원</div>
+          <div style={{ fontSize: 12, color: diffAmt >= 0 ? "var(--color-success)" : "var(--color-danger)", marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
+             {diffAmt >= 0 ? "▲" : "▼"} {fmt(Math.abs(diffAmt))}원 ({totalPrevAmt > 0 ? (diffAmt/totalPrevAmt*100).toFixed(2) : 0}%)
+             <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>기존 대비</span>
+          </div>
+        </div>
+
+        <div className="glass-panel stat-card" style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{fontSize:16,fontWeight:600,marginBottom:4}}>종목 및 잔고 입력</div>
-            <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>오늘(또는 선택 날짜)의 평가금액을 입력하세요.</div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"var(--color-background-secondary)",padding:"4px 10px",borderRadius:6,border:"0.5px solid var(--color-border-tertiary)"}}>
-              <span style={{fontSize:11,color:"var(--color-text-secondary)",fontWeight:500}}>기록 날짜</span>
-              <input type="date" value={saveDate} onChange={e=>setSaveDate(e.target.value)} style={{border:"none",background:"none",fontSize:12,color:"var(--color-text-primary)",fontFamily:"inherit",outline:"none"}} />
+            <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>자산 배분 현황</div>
+            <div style={{ marginTop: 8 }}>
+              {sortedAlloc.slice(0, 3).map(([cls, amt]) => (
+                <div key={cls} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: ASSET_COLORS[cls] || "#888" }} />
+                  <span style={{ fontSize: 11, color: "var(--text-main)" }}>{cls}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{(amt/totalAmt*100).toFixed(0)}%</span>
+                </div>
+              ))}
             </div>
-            <Btn sm onClick={syncPrices} style={{background:"#185fa5",color:"#fff",borderColor:"transparent"}}>{isFetching ? "조회 중..." : "현재가 동기화 ↻"}</Btn>
-            <Btn sm onClick={addItem}>+ 행 추가</Btn>
-            <Btn sm onClick={clearAll}>초기화</Btn>
+          </div>
+          {/* 미니 도넛 차트 (SVG) */}
+          <div style={{ width: 80, height: 80, position: "relative" }}>
+            <svg viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
+              {(() => {
+                let offset = 0;
+                return sortedAlloc.map(([cls, amt]) => {
+                  const pct = (amt / totalAmt) * 100;
+                  const stroke = ASSET_COLORS[cls] || "#888";
+                  const dash = `${pct} ${100 - pct}`;
+                  const currentOffset = offset;
+                  offset += pct;
+                  return <circle key={cls} cx="18" cy="18" r="15.9" fill="none" stroke={stroke} strokeWidth="4" strokeDasharray={dash} strokeDashoffset={-currentOffset} />;
+                });
+              })()}
+              <circle cx="18" cy="18" r="12" fill="var(--bg-main)" />
+            </svg>
           </div>
         </div>
 
-        <div style={{ background: "var(--color-background-secondary)", padding: "12px 16px", borderRadius: 8, marginBottom: "1.5rem", borderLeft: "4px solid #185fa5", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.6 }}>
-          <strong style={{ color: "#185fa5" }}>💡 입력 팁:</strong> 목록에 없는 종목이나 티커는 <strong>직접 타이핑하여 입력</strong>하시면 됩니다. 한 번 저장된 종목은 다음번 입력 시 자동으로 추천 목록에 나타납니다.
+        <div className="glass-panel stat-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>작업 관리</div>
+            <div className="badge" style={{ background: "rgba(59, 130, 246, 0.1)", color: "var(--color-primary)" }}>{items.length} 종목 입력 중</div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn sm onClick={syncPrices} style={{ flex: 1, height: 40, borderRadius: 10, background: "var(--color-primary)", color: "#fff", border: "none" }}>시세 동기화</Btn>
+            <Btn sm onClick={addItem} style={{ flex: 1, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.05)", color: "var(--text-main)", border: "1px solid var(--border-glass)" }}>+ 종목 추가</Btn>
+          </div>
+        </div>
+      </div>
+
+      {/* 🧾 메인 입력 테이블 패널 */}
+      <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 4, height: 18, background: "var(--color-primary)", borderRadius: 2 }} />
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>포트폴리오 잔고 명세</h3>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>기록 날짜:</span>
+            <input type="date" value={saveDate} onChange={e=>setSaveDate(e.target.value)} style={{ padding: "4px 8px", fontSize: 12 }} />
+            <Btn sm onClick={clearAll} style={{ color: "var(--color-danger)", background: "transparent", border: "1px solid rgba(239, 68, 68, 0.2)" }}>초기화</Btn>
+          </div>
         </div>
 
-        <div style={{overflowX:"auto",margin:"0 -4px",border:"1px solid var(--color-border-tertiary)",borderRadius:8}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1000}}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="premium-table">
             <thead>
-              <tr style={{background:"var(--color-background-secondary)",borderBottom:"2px solid var(--color-border-tertiary)"}}>
-                <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"10%"}}>티커</th>
-                <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"18%"}}>종목명(설명)</th>
-                <th style={{textAlign:"left",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>자산군</th>
-                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"8%"}}>이전 수량</th>
-                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"10%"}}>주식수</th>
-                <th style={{textAlign:"center",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"8%"}}>변동</th>
-                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>
-                  현재가
-                  <div style={{fontSize:9,fontWeight:400,color:"var(--color-text-secondary)",marginTop:2}}>*기록 날짜 기준 종가</div>
-                </th>
-                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>매수원가(총액)</th>
-                <th style={{textAlign:"right",padding:"12px 10px",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,borderRight:"1px solid var(--color-border-tertiary)",width:"12%"}}>평가금액</th>
-                <th style={{width:80,background:"#fff"}}></th>
+              <tr>
+                <th style={{ width: "12%" }}>티커</th>
+                <th style={{ width: "22%" }}>종목명</th>
+                <th style={{ width: "15%" }}>자산군</th>
+                <th style={{ width: "10%", textAlign: "right" }}>이전</th>
+                <th style={{ width: "12%", textAlign: "right" }}>현재 수량</th>
+                <th style={{ width: "8%", textAlign: "center" }}>변동</th>
+                <th style={{ width: "15%", textAlign: "right" }}>현재가/금액</th>
+                <th style={{ width: "6%" }}></th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item, i) => (
-                <tr key={i} style={{borderBottom:"1px solid var(--color-border-tertiary)",background:i%2===1?"#fafbfc":"#fff"}}>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input list="ticker-datalist" value={item.ticker} onChange={e => updateItem(i, "ticker", e.target.value)} placeholder="069500" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",fontFamily:"monospace",outline:"none"}} />
-                  </td>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input list="name-datalist" value={item.name} onChange={e => updateItem(i, "name", e.target.value)} placeholder="종목이름 입력(예: KODEX 200)" style={{width:"100%",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none"}} />
-                  </td>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <select value={item.assetClass} onChange={e => updateItem(i, "assetClass", e.target.value)} style={{width:"100%",padding:"10px",border:"none",background:"transparent",fontSize:13,color:"var(--color-text-primary)",outline:"none",cursor:"pointer"}}>
-                      <option value="">(선택)</option>
-                      {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </td>
-                  <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"var(--color-text-secondary)",fontVariantNumeric:"tabular-nums",background:"#f9f9f9"}}>
-                    {prevQtys[item.ticker] || 0}
-                  </td>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)",background:Number(item.quantity)===0?"#fff5f5":"transparent"}}>
-                    <input type="number" value={item.quantity||""} onChange={e => updateItem(i, "quantity", e.target.value)} placeholder="0" style={{width:"100%",textAlign:"right",padding:"10px 12px",border:"none",background:"transparent",fontSize:13,color:Number(item.quantity)===0?"#d32f2f":"var(--color-text-primary)",fontWeight:Number(item.quantity)===0?700:400,outline:"none",fontVariantNumeric:"tabular-nums"}} />
-                  </td>
-                  <td style={{padding:"10px 12px",textAlign:"center",borderRight:"1px solid var(--color-border-tertiary)",fontSize:12,fontWeight:600}}>
-                    {(() => {
-                      const prev = prevQtys[item.ticker] || 0;
-                      const diff = (Number(item.quantity) || 0) - prev;
-                      if (diff === 0) return <span style={{color:"#ccc"}}>-</span>;
-                      return <span style={{color:diff>0?"#185fa5":"#d32f2f"}}>{diff > 0 ? "+" : ""}{diff}</span>;
-                    })()}
-                  </td>
-                  <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"#185fa5",fontWeight:500,background:item.currentPrice>0?"#f0f7ff":"transparent",fontVariantNumeric:"tabular-nums"}}>
-                    {item.currentPrice > 0 ? fmt(item.currentPrice) : "-"}
-                  </td>
-                  <td style={{padding:0,borderRight:"1px solid var(--color-border-tertiary)"}}>
-                    <input type="number" value={item.costAmt||""} onChange={e => updateItem(i, "costAmt", e.target.value)} placeholder="0" style={{width:"100%",textAlign:"right",padding:"10px 12px",border:"none",background:"#f9f9f9",fontSize:13,color:"var(--color-text-secondary)",outline:"none",fontVariantNumeric:"tabular-nums"}} />
-                  </td>
-                  <td style={{padding:"10px 12px",textAlign:"right",borderRight:"1px solid var(--color-border-tertiary)",fontSize:13,color:"#0c447c",fontWeight:700,background:"#f0f7ff",fontVariantNumeric:"tabular-nums"}}>
-                    {item.amount > 0 ? fmt(Math.round(item.amount)) : "0"}
-                  </td>
-                  <td style={{textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:4,height:44}}>
-                    <button onClick={() => updateItem(i, "quantity", 0)} title="전량 매도" style={{border:"none",background:Number(item.quantity)===0?"#eee":"#fdf2f2",color:Number(item.quantity)===0?"#999":"#d32f2f",cursor:"pointer",fontSize:11,padding:"4px 6px",borderRadius:4,fontWeight:600}} disabled={Number(item.quantity)===0}>매도</button>
-                    <button onClick={() => removeItem(i)} title="행 삭제" style={{border:"none",background:"none",color:"#ccc",cursor:"pointer",fontSize:18,padding:"4px"}}>&times;</button>
-                  </td>
-                </tr>
-              ))}
+              {items.map((item, i) => {
+                const prev = prevQtys[item.ticker] || 0;
+                const curr = Number(item.quantity) || 0;
+                const isSold = curr === 0;
+                return (
+                  <tr key={i} style={{ opacity: isSold ? 0.6 : 1 }}>
+                    <td>
+                      <input list="ticker-datalist" value={item.ticker} onChange={e => updateItem(i, "ticker", e.target.value)} placeholder="069500" style={{ fontFamily: "monospace" }} />
+                    </td>
+                    <td>
+                      <input list="name-datalist" value={item.name} onChange={e => updateItem(i, "name", e.target.value)} placeholder="종목명 검색..." />
+                    </td>
+                    <td>
+                      <select value={item.assetClass} onChange={e => updateItem(i, "assetClass", e.target.value)}>
+                        <option value="">미지정</option>
+                        {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ textAlign: "right", color: "var(--text-dim)", fontSize: 12 }}>{prev}</td>
+                    <td>
+                      <input type="number" value={item.quantity || ""} onChange={e => updateItem(i, "quantity", e.target.value)} placeholder="0" style={{ textAlign: "right", fontWeight: isSold ? 400 : 700 }} />
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                       {curr - prev !== 0 && (
+                         <div className="badge" style={{ background: (curr-prev)>0 ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)", color: (curr-prev)>0 ? "var(--color-success)" : "var(--color-danger)" }}>
+                            {(curr-prev)>0 ? "+" : ""}{curr-prev}
+                         </div>
+                       )}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-primary)" }}>{fmt(item.amount)}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-dim)" }}>@{fmt(item.currentPrice)}</div>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button onClick={() => updateItem(i, "quantity", 0)} disabled={isSold} style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: isSold ? "rgba(255,255,255,0.05)" : "rgba(239, 68, 68, 0.1)", color: isSold ? "var(--text-muted)" : "var(--color-danger)", cursor: isSold ? "default" : "pointer", fontSize: 10 }}>매도</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-
-        <div style={{marginTop:"2.5rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:15,paddingTop:"1.5rem",borderTop:"1px dashed var(--color-border-tertiary)"}}>
-          <div style={{background:"var(--color-background-secondary)",padding:".875rem 1.5rem",borderRadius:12,border:"1px solid var(--color-border-tertiary)"}}>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)",fontWeight:500}}>총 평가금액 합계</span>
-            <div style={{fontSize:22,fontWeight:700,color:"var(--color-text-primary)",marginTop:2}}>{fmt(totalAmt)}원</div>
-          </div>
-          <div style={{display:"flex",gap:12}}>
-            <Btn primary onClick={() => onSave(items, saveDate)} style={{minWidth:160,height:48,fontSize:14,borderRadius:10,boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>{isSaving ? "데이터베이스에 저장 중..." : "데이터베이스에 저장 ↗"}</Btn>
-          </div>
-        </div>
-      </Card>
-      <div style={{background:"#fdf2f2",borderRadius:10,padding:"1.25rem",fontSize:13,color:"#791f1f",lineHeight:1.7,border:"0.5px solid #f8d7da"}}>
-        <div style={{fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:16}}>⚠️</span> 주의 사항
-        </div>
-        <div>'저장' 버튼을 누르면 <strong>{saveDate}</strong> 날짜의 데이터가 현재 입력된 내용으로 클라우드 DB에 동기화됩니다.</div>
       </div>
+
+      {/* 💾 하단 액션 바 */}
+      <div className="glass-panel" style={{ padding: "1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+         <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+           <span style={{ marginRight: 8 }}>⚠️</span>
+           <b>{saveDate}</b>일자로 클라우드 DB에 동기화합니다.
+         </div>
+         <Btn primary onClick={() => onSave(items, saveDate)} style={{ height: 44, padding: "0 2rem", fontSize: 14, fontWeight: 600, background: "var(--color-primary)", color: "#fff", border: "none", borderRadius: 10, boxShadow: "0 10px 20px -5px rgba(59, 130, 246, 0.5)" }}>
+           {isSaving ? "처리 중..." : "최종 데이터 저장"}
+         </Btn>
+      </div>
+
       <datalist id="ticker-datalist">
         {krEtfs.map(e => <option key={e.ticker} value={e.ticker}>{e.name}</option>)}
       </datalist>
