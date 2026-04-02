@@ -1,11 +1,11 @@
 :root {
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
-  /* Premium Dark Theme Colors */
+  /* Premium Dark Theme Colors (Ergonomic Adjustments) */
   --bg-main: #0a0f1d;
-  --bg-card: rgba(23, 32, 51, 0.7);
-  --bg-input: rgba(15, 23, 42, 0.8);
-  --border-glass: rgba(255, 255, 255, 0.08);
+  --bg-card: rgba(23, 32, 51, 0.85);
+  --bg-input: rgba(15, 23, 42, 0.9);
+  --border-glass: rgba(255, 255, 255, 0.15); /* Increased for better visibility */
   
   --color-primary: #3b82f6; 
   --color-success: #10b981;
@@ -13,14 +13,14 @@
   --color-warning: #f59e0b;
   
   --text-main: #f8fafc;
-  --text-dim: #94a3b8;
-  --text-muted: #64748b;
+  --text-dim: #cbd5e1; /* Increased contrast from #94a3b8 */
+  --text-muted: #94a3b8; /* Increased contrast from #64748b */
 
   --radius-xl: 20px;
   --radius-lg: 16px;
   --radius-md: 12px;
   
-  --shadow-premium: 0 12px 40px -12px rgba(0, 0, 0, 0.5);
+  --shadow-premium: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
 }
 
 body {
@@ -29,8 +29,8 @@ body {
   font-family: var(--font-sans);
   background: var(--bg-main);
   background-image: 
-    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
   color: var(--text-main);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -39,64 +39,75 @@ body {
 /* Premium Components */
 .glass-panel {
   background: var(--bg-card);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-premium);
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   padding: 1.25rem;
   transition: all 0.2s ease;
 }
 .stat-card:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   transform: translateY(-2px);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px 10px;
   border-radius: 6px;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.025em;
 }
 
-/* Input Styling Override for Premium Feel */
+/* Hide scrollbars but keep functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Input Styling Override for Premium Feel & Accessibility */
 input, select {
   background: var(--bg-input) !important;
-  border: 1px solid var(--border-glass) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important; /* Clearly visible borders */
   color: var(--text-main) !important;
   border-radius: 8px !important;
-  transition: border-color 0.2s !important;
+  padding: 8px 12px !important;
+  transition: all 0.2s !important;
 }
 input:focus, select:focus {
   border-color: var(--color-primary) !important;
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  background: rgba(15, 23, 42, 1) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
 }
 
-/* Data Table refinement */
+/* Data Table refinement (Ergonomic spacing) */
 .premium-table {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 0 4px;
+  border-spacing: 0 6px; /* Slightly more relaxed height */
 }
 .premium-table th {
-  color: var(--text-muted);
-  font-weight: 500;
-  font-size: 0.8rem;
-  padding: 12px;
+  color: var(--text-dim); /* Better contrast */
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 14px 12px;
   text-align: left;
 }
 .premium-table td {
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.01);
+  padding: 10px 12px; /* Professional density */
+  background: rgba(255, 255, 255, 0.02);
   border-top: 1px solid var(--border-glass);
   border-bottom: 1px solid var(--border-glass);
 }
@@ -109,6 +120,6 @@ input:focus, select:focus {
   border-radius: 0 12px 12px 0;
 }
 .premium-table tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.05);
 }
 

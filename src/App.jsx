@@ -278,12 +278,12 @@ const HoldingsCard = ({ holdings, total }) => {
 function Dashboard({portfolio,vix,vixLoading,onFetchVix,onGo}){
   const z=getZone(vix);
   const s=getStrat(portfolio.strategy);
-  const total=portfolio.total;
+  const total=portfolio.total || 0;
   const holdings=portfolio.holdings.map(h=>{
-    const cur=Math.round(h.amt/total*1000)/10;
+    const cur=total > 0 ? Math.round(h.amt/total*1000)/10 : 0;
     return{...h,cur,diff:Math.round((cur-h.target)*10)/10};
   });
-  const riskPct=Math.round(holdings.filter(h=>["미국주식","선진국주식","신흥국주식","국내주식","금","원자재","부동산리츠"].includes(h.cls)).reduce((s,h)=>s+h.cur,0)*10)/10;
+  const riskPct=total > 0 ? Math.round(holdings.filter(h=>["미국주식","선진국주식","신흥국주식","국내주식","금","원자재","부동산리츠"].includes(h.cls)).reduce((s,h)=>s+h.cur,0)*10)/10 : 0;
 
   return(
     <div>
@@ -1940,14 +1940,14 @@ function AuthSetup({ user, onLogin, onSignUp, onLogout, isSaving }) {
             {isDemo&&<Badge c="#633806" bg="#faeeda">데모 모드</Badge>}
             <Badge c={vixLoading?"var(--color-text-secondary)":"#27500a"} bg={vixLoading?"var(--color-background-secondary)":"#eaf3de"}>VIX {vixLoading?"…":vix.toFixed(1)}</Badge>
             <Btn sm onClick={()=>setTab("account")}>{user?"계정 관리":"로그인"}</Btn>
-            <Btn sm onClick={()=>setTab("report")} danger>월간 리포트 PDF</Btn>
+            <Btn sm onClick={()=>setTab("report")} style={{background:"var(--color-primary)", color:"#fff", border:"none"}}>월간 리포트 PDF</Btn>
           </div>
         </div>
       </div>
 
       <div style={{maxWidth:940,margin:"0 auto",padding:"0 1rem"}}>
         {/* 탭 */}
-        <div style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--color-border-tertiary)",marginBottom:"1.5rem",overflowX:"auto"}}>
+        <div className="no-scrollbar" style={{display:"flex",gap:2,borderBottom:"0.5px solid var(--color-border-tertiary)",marginBottom:"1.5rem",overflowX:"auto"}}>
           {TABS.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 15px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:tab===t.id?"var(--color-text-primary)":"var(--color-text-secondary)",borderBottom:`2px solid ${tab===t.id?"var(--color-text-primary)":"transparent"}`,fontWeight:tab===t.id?500:400,fontFamily:"var(--font-sans)",marginBottom:-1,whiteSpace:"nowrap"}}>
               {t.label}
