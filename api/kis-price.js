@@ -38,42 +38,71 @@ async function getAccessToken() {
 }
 
 export default async function handler(req, res) {
-  // 1. 티커 확인
-  const { ticker } = req.query;
+  // 1. 티커 및 타입 확인
+  const { ticker, type } = req.query; // type: "overseas" or "domestic" (default)
   if (!ticker) return res.status(400).json({ error: "종목코드(ticker)가 필요합니다." });
 
   // 2. KIS API 보안 헤더 및 파라미터 준비
   try {
     const token = await getAccessToken();
-    const iscd = String(ticker).padStart(6, "0"); // 6자리 포맷팅 (069500 등)
 
-    // 국내주식 현재가 시세 조회 API 호출
-    const url = `${API_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${iscd}`;
-    
-    const priceRes = await fetch(url, {
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${token}`,
-        "appkey": process.env.KIS_APP_KEY,
-        "appsecret": process.env.KIS_APP_SECRET,
-        "tr_id": "FHKST01010100" // 현재가 조회 트랜잭션 ID
-      }
-    });
-
-    const body = await priceRes.json();
-
-    if (body.output) {
-      // 성공 응답: 현재가 및 종목명 반환
-      return res.status(200).json({ 
-        ticker: iscd, 
-        price: Number(body.output.stck_prpr),
-        name: body.output.hts_kor_isnm,
-        msg: body.msg1
+    if (type === "overseas") {
+      // --- 해외 지수/주식 조회 (예: VIX) ---
+      // VIX는 보통 CBOE(BAQ/BAA 등) 거래소 소속이지만, KIS에서는 종목 성격에 따라 다를 수 있음
+      // 여기서는 범용적인 해외 주식/지수 조회 TR_ID를 사용
+      const symb = String(ticker).toUpperCase();
+      const excd = req.query.excd || "NYS"; // 기본값 NYS (S&P/VIX 등 지수용)
+      
+      const url = `${API_BASE_URL}/uapi/overseas-stock/v1/quotations/inquire-price?AUTH=""&EXCD=${excd}&SYMB=${symb}`;
+      
+      const priceRes = await fetch(url, {
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${token}`,
+          "appkey": process.env.KIS_APP_KEY,
+          "appsecret": process.env.KIS_APP_SECRET,
+          "tr_id": "HHDFS00000300" // 해외 주식 현재가 조회 TR_ID
+        }
       });
-    }
 
-    // API 오류 메시지 처리
-    res.status(500).json({ error: body.msg1 || "KIS API로부터 응답을 받지 못했습니다." });
+      const body = await priceRes.json();
+      if (body.output) {
+        return res.status(200).json({
+          ticker: symb,
+          price: Number(body.output.last), // 현재가
+          name: body.output.name,
+          currency: body.output.curr,
+          msg: body.msg1
+        });
+      }
+      return res.status(500).json({ error: body.msg1 || "해외 시세 조회 실패" });
+
+    } else {
+      // --- 국내 주식/ETF 조회 (기존 로직) ---
+      const iscd = String(ticker).padStart(6, "0");
+      const url = `${API_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${iscd}`;
+      
+      const priceRes = await fetch(url, {
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${token}`,
+          "appkey": process.env.KIS_APP_KEY,
+          "appsecret": process.env.KIS_APP_SECRET,
+          "tr_id": "FHKST01010100"
+        }
+      });
+
+      const body = await priceRes.json();
+      if (body.output) {
+        return res.status(200).json({ 
+          ticker: iscd, 
+          price: Number(body.output.stck_prpr),
+          name: body.output.hts_kor_isnm,
+          msg: body.msg1
+        });
+      }
+      return res.status(500).json({ error: body.msg1 || "국내 시세 조회 실패" });
+    }
 
   } catch (e) {
     console.error("KIS Proxy Function Error:", e.message);

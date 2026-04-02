@@ -1618,10 +1618,27 @@ export default function PensionPilot(){
     setTab("dashboard");
   }
 
-  // VIX 실시간 지수 직접 조회
+  // VIX 실시간 지수 조회 (한국투자증권 KIS API 연동)
   async function fetchVix() {
     setVixLoading(true);
     try {
+      // 내부 서버리스 API 프록시 호출 (해외 모드)
+      // VIX 지수는 NYS(또는 CBO) 거래소 코드를 통해 조회 시도
+      const res = await fetch("/api/kis-price?ticker=VIX&type=overseas&excd=NYS");
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.price === "number" && data.price > 0) {
+          setVix(data.price);
+          setVixLoading(false);
+          return;
+        }
+      } else {
+        const err = await res.json();
+        console.warn("VIX KIS 조회 실패 응답:", err.error);
+      }
+
+      // 실패 시의 기존 백업 (네트워크 상황에 따라 활용)
       const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX');
       const directRes = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
       if (directRes.ok) {
@@ -1630,15 +1647,10 @@ export default function PensionPilot(){
         const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
         if (typeof val === "number" && val > 0) {
           setVix(val);
-          setVixLoading(false);
-          return;
         }
       }
-      const res = await fetch("/api/vix");
-      const d = await res.json();
-      if (d && typeof d.vix === "number" && Number.isFinite(d.vix)) setVix(d.vix);
     } catch (e) {
-      console.warn("VIX 조회 실패:", e.message);
+      console.warn("VIX 조회 과중 중 오류:", e.message);
     }
     setVixLoading(false);
   }
