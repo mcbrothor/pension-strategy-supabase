@@ -4,7 +4,12 @@ import { supabase } from '../lib/supabase';
 const MarketContext = createContext();
 
 export function MarketProvider({ children }) {
-  const [vix, setVix] = useState(null);
+  // 초기값: localStorage에서 불러오거나 없으면 기본값 사용
+  const savedVix = JSON.parse(localStorage.getItem('vix_data') || '{"vix": 23.4, "source": "Default", "updatedAt": null}');
+  
+  const [vix, setVix] = useState(savedVix.vix);
+  const [vixSource, setVixSource] = useState(savedVix.source);
+  const [vixUpdatedAt, setVixUpdatedAt] = useState(savedVix.updatedAt);
   const [vixLoading, setVixLoading] = useState(false);
   const [krEtfs, setKrEtfs] = useState([]);
   const [tickerMap, setTickerMap] = useState({});
@@ -12,30 +17,46 @@ export function MarketProvider({ children }) {
   const fetchVix = async () => {
     setVixLoading(true);
     try {
-      // 1. 전용 VIX 엔드포인트 시도 (/api/vix)
+      // 1. 전용 VIX 브리지 API 시도 (KIS 우선 순위 포함됨)
       const res = await fetch("/api/vix");
       if (res.ok) {
         const data = await res.json();
         if (data.ok && typeof data.vix === "number") {
-          setVix(data.vix);
+          const newData = {
+            vix: data.vix,
+            source: data.source || "Unknown",
+            updatedAt: data.updatedAt
+          };
+          setVix(newData.vix);
+          setVixSource(newData.source);
+          setVixUpdatedAt(newData.updatedAt);
+          localStorage.setItem('vix_data', JSON.stringify(newData));
           setVixLoading(false);
           return;
         }
       }
       
-      // 2. 실패 시 야후 파이낸스 백업 시도
+      // 2. 실패 시 야후 파이낸스 백업 시도 (프론트엔드 직접 호출)
       const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX');
       const directRes = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
       if (directRes.ok) {
         const wrapper = await directRes.json();
         const d = JSON.parse(wrapper.contents);
         const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (typeof val === "number" && val > 0) setVix(val);
+        if (typeof val === "number" && val > 0) {
+          const newData = {
+            vix: val,
+            source: "Yahoo",
+            updatedAt: new Date().toISOString()
+          };
+          setVix(newData.vix);
+          setVixSource(newData.source);
+          setVixUpdatedAt(newData.updatedAt);
+          localStorage.setItem('vix_data', JSON.stringify(newData));
+        }
       }
     } catch (e) {
-      console.warn("VIX 조회 실패 (종합):", e.message);
-      // 최종 실패 시 기본값이라도 설정 (과거 데이터)
-      if (!vix) setVix(23.4);
+      console.warn("VIX 조회 최종 실패:", e.message);
     }
     setVixLoading(false);
   };
@@ -71,7 +92,7 @@ export function MarketProvider({ children }) {
   }, []);
 
   return (
-    <MarketContext.Provider value={{ vix, vixLoading, fetchVix, krEtfs, tickerMap }}>
+    <MarketContext.Provider value={{ vix, vixSource, vixUpdatedAt, vixLoading, fetchVix, krEtfs, tickerMap }}>
       {children}
     </MarketContext.Provider>
   );

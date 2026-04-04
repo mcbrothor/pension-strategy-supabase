@@ -5,7 +5,7 @@ import { getStrat, getZone } from "../../utils/helpers.js";
 import { RISK_DATA } from "../../constants/index.js";
 import { estimateRiskMetrics } from "../../utils/calculators.js";
 
-export default function MonthlyReport({ portfolio, vix }) {
+export default function MonthlyReport({ portfolio, vix, vixSource, vixUpdatedAt }) {
   const s = getStrat(portfolio.strategy);
   const now = new Date();
   const month = `${now.getFullYear()}년 ${String(now.getMonth() + 1).padStart(2, "0")}월`;
@@ -13,7 +13,8 @@ export default function MonthlyReport({ portfolio, vix }) {
   const holdings = portfolio.holdings.map(h => ({ ...h, cur: total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0 }));
   
   // 위험 지표 계산
-  const metrics = estimateRiskMetrics(holdings, RISK_DATA, s?.annualRet?.base || 0.08);
+  const annualExpRet = s?.annualRet?.base || 0.08;
+  const metrics = estimateRiskMetrics(holdings, RISK_DATA, annualExpRet);
   const sharpe = metrics.sharpe;
   const vol = metrics.vol;
   const riskLevel = vol < 8 ? "보수적" : vol < 15 ? "중립적" : "공격적";
@@ -24,10 +25,10 @@ export default function MonthlyReport({ portfolio, vix }) {
   
   const generateInsight = () => {
     let text = `현재 포트폴리오는 변동성 ${fmtP(metrics.vol * 100)} 수준의 '${riskLevel}' 전략을 유지하고 있습니다. `;
-    if (vix > 25) {
-      text += `VIX 지수가 ${vix.toFixed(1)}로 시장 불안정성이 높으므로, 공격적인 비중 확대보다는 방어적인 포지션 유지를 권장합니다. `;
+    if (vix && vix > 25) {
+      text += `VIX 지수가 ${vix?.toFixed(1) || "…"}로 시장 불안정성이 높으므로, 공격적인 비중 확대보다는 방어적인 포지션 유지를 권장합니다. `;
     } else {
-      text += `VIX 지수가 ${vix.toFixed(1)}로 안정적인 흐름을 보이고 있어, 전략 기준에 따른 정기 리밸런싱이 유효한 시점입니다. `;
+      text += `VIX 지수가 ${vix?.toFixed(1) || "…"}로 안정적인 흐름을 보이고 있어, 전략 기준에 따른 정기 리밸런싱이 유효한 시점입니다. `;
     }
     const driftItems = holdings.filter(h => Math.abs(h.cur - h.target) >= 5);
     if (driftItems.length > 0) {
@@ -70,7 +71,8 @@ export default function MonthlyReport({ portfolio, vix }) {
 
     <h3>2. 전략 및 리스크 현황</h3>
     <p>적용 전략: <strong>${s.name}</strong> (${s.level}) / 계좌 유형: <strong>${portfolio.accountType} (위험자산 한도 70%)</strong><br>
-    시장 국면: <strong>VIX ${vix.toFixed(1)} (${z.lbl})</strong> - ${z.desc}</p>
+    시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}<br>
+    <small style="color:#666">데이터 출처: ${vixSource} (${vixUpdatedAt ? new Date(vixUpdatedAt).toLocaleString() : "—"})</small></p>
 
     <h3>3. 자산 클래스별 상세 분석</h3>
     <table><thead><tr><th>자산명</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>
@@ -123,6 +125,7 @@ export default function MonthlyReport({ portfolio, vix }) {
               <div style={{ fontWeight: 600 }}>주요 관리 포인트</div>
               <div style={{ color: "var(--text-dim)" }}>
                 · VIX 국면: {z.lbl} ({z.mode})<br />
+                · KIS 데이터: {vixSource} ({vixUpdatedAt ? new Date(vixUpdatedAt).toLocaleTimeString() : "—"})<br />
                 · IRP 위험한도: {holdings.filter(h => ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"].includes(h.cls)).reduce((s, h) => s + h.cur, 0).toFixed(1)}% / 70%<br />
                 · 리밸런싱 필요도: {holdings.some(h => Math.abs(h.cur - h.target) >= 5) ? "높음 (이탈 확인)" : "낮음 (안정)"}
               </div>

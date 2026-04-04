@@ -4,7 +4,7 @@ import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { ASSET_COLORS } from "../../constants/index.js";
 
-export default function RebalanceJudge({ portfolio, vix }) {
+export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt }) {
   const [step, setStep] = useState(0);
   const [checked, setChecked] = useState({});
   const REBAL_DAYS = { "연 1회": 365, "분기 1회": 90, "월 1회": 30 };
@@ -31,7 +31,7 @@ export default function RebalanceJudge({ portfolio, vix }) {
 
   const reasons = [
     { type: isOverdue ? "danger" : isTime ? "warn" : "ok", title: `리밸런싱 주기: ${portfolio.rebalPeriod} — ${elapsed}일 경과`, body: isOverdue ? `기준(${required}일) 초과 — 즉시 실행 권장.` : isTime ? `기준의 90% 도달 — 실행 시점.` : `${required - elapsed}일 후 예정.` },
-    { type: vix > 35 ? "danger" : vix > 25 ? "warn" : "ok", title: `VIX ${vix.toFixed(1)} — ${z.lbl} (${z.mode})`, body: z.desc },
+    { type: vix && vix > 35 ? "danger" : vix && vix > 25 ? "warn" : "ok", title: `VIX ${vix?.toFixed(1) || "…"} — ${z.lbl} (${z.mode})`, body: z.desc },
     { type: portfolio.mdd < portfolio.mddLimit ? "danger" : "ok", title: `MDD ${portfolio.mdd.toFixed(1)}% (제한선 ${portfolio.mddLimit}%)`, body: portfolio.mdd < portfolio.mddLimit ? "MDD 제한선 초과 — 방어 자산 비중 확보 우선." : "MDD 정상 범위. 전략 기준대로 진행하세요." },
     ...(portfolio.accountType === "IRP" ? [{ type: irpRisk > 70 ? "danger" : irpRisk > 65 ? "warn" : "ok", title: `IRP 위험자산 ${irpRisk}% (한도 70%)`, body: irpRisk > 70 ? "IRP 한도 초과. 주식·금·원자재 비중을 70% 이하로 맞추세요." : "IRP 위험자산 정상 범위." }] : []),
     ...(stopLossItems.length > 0 ? [{ type: "danger", title: `손절 경고: ${stopLossItems.map(h => h.etf).join(", ")}`, body: `손절 기준(${portfolio.stopLoss}%) 초과. 우선 매도 후 리밸런싱하세요.` }] : []),
@@ -61,7 +61,12 @@ export default function RebalanceJudge({ portfolio, vix }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8 }}>
           <MetaCard label="총 평가금액" value={fmt(total) + "원"} />
-          <MetaCard label="VIX" value={vix.toFixed(1)} sub={z.lbl} subColor={z.color} />
+          <MetaCard 
+            label="VIX" 
+            value={vix?.toFixed(1) || "…"} 
+            sub={vixUpdatedAt ? `${vixSource} (${new Date(vixUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : z.lbl} 
+            subColor={vixUpdatedAt ? "var(--text-dim)" : z.color} 
+          />
           <MetaCard label="MDD" value={portfolio.mdd.toFixed(1) + "%"} sub={"제한 " + portfolio.mddLimit + "%"} subColor={portfolio.mdd < portfolio.mddLimit ? "#a32d2d" : "#3b6d11"} />
           <MetaCard label="IRP 위험자산" value={irpRisk + "%"} sub={portfolio.accountType === "IRP" ? "한도 70%" : "-"} subColor={irpRisk > 70 ? "#a32d2d" : "#3b6d11"} />
         </div>
@@ -98,7 +103,17 @@ export default function RebalanceJudge({ portfolio, vix }) {
               <div style={{ height: "100%", width: `${Math.min(elapsed / required * 100, 100)}%`, background: isOverdue ? "#a32d2d" : isTime ? "#ba7517" : "#3b6d11", borderRadius: 3 }} />
             </div>
           </Card>
-          <Card><ST>VIX 시장 신호</ST><VixBar vix={vix} /><div style={{ background: z.bg, borderRadius: 8, padding: ".875rem 1rem", marginTop: 10 }}><Badge c={z.color} bg={z.color + "20"}>{z.mode}</Badge><span style={{ fontSize: 12, color: z.color, marginLeft: 8 }}>{z.desc}</span></div></Card>
+          <Card>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".5rem" }}>
+              <ST style={{ marginBottom: 0 }}>VIX 시장 신호</ST>
+              {vixUpdatedAt && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{vixSource} · {new Date(vixUpdatedAt).toLocaleString()}</span>}
+            </div>
+            <VixBar vix={vix} />
+            <div style={{ background: z.bg, borderRadius: 8, padding: ".875rem 1rem", marginTop: 10 }}>
+              <Badge c={z.color} bg={z.color + "20"}>{z.mode}</Badge>
+              <span style={{ fontSize: 12, color: z.color, marginLeft: 8 }}>{z.desc}</span>
+            </div>
+          </Card>
           <Card>
             <ST>현재 비중 편차</ST>
             {holdings.map((h, i) => <AllocBar key={i} label={h.etf} pct={h.cur} target={h.target} color={ASSET_COLORS[h.cls] || "#888"} />)}
@@ -115,7 +130,7 @@ export default function RebalanceJudge({ portfolio, vix }) {
               <div style={{ fontSize: 14, fontWeight: 500, color: isOverdue || portfolio.mdd < portfolio.mddLimit ? "#791f1f" : "#27500a", marginBottom: 5 }}>
                 {portfolio.mdd < portfolio.mddLimit ? "리밸런싱 실행 — MDD 제한선 초과. 방어 자산 우선." : isOverdue ? "리밸런싱 실행 — 주기 도달. 전략 기준대로 조정하세요." : isTime ? "리밸런싱 실행 — 시점 도달. VIX 신호 참고해 집행하세요." : "리밸런싱 불필요 — 기준일까지 유지하세요."}
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>{vix > 35 ? "공황 구간 — 분할 집행(3~5회) 권장." : vix > 25 ? "불안 구간 — 2~3회 분할 매수 권장." : "정상 구간 — 전략 기준대로 일괄 집행 가능."}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>{vix && vix > 35 ? "공황 구간 — 분할 집행(3~5회) 권장." : vix && vix > 25 ? "불안 구간 — 2~3회 분할 매수 권장." : "정상 구간 — 전략 기준대로 일괄 집행 가능."}</div>
             </div>
             {reasons.map((r, i) => <ReasonBox key={i} {...r} />)}
           </Card>
@@ -169,7 +184,7 @@ export default function RebalanceJudge({ portfolio, vix }) {
           </Card>}
           {buys.length > 0 && <Card>
             <div style={{ fontSize: 11, fontWeight: 500, color: "#0c447c", marginBottom: ".75rem" }}>매수 — 비중 부족 자산</div>
-            {vix > 25 && <div style={{ background: "#faeeda", borderRadius: 8, padding: ".75rem 1rem", fontSize: 12, color: "#633806", marginBottom: "1rem" }}>VIX {vix.toFixed(1)} 불안 구간 — {vix > 35 ? "3~5회" : "2~3회"} 분할 매수 권장</div>}
+            {vix && vix > 25 && <div style={{ background: "#faeeda", borderRadius: 8, padding: ".75rem 1rem", fontSize: 12, color: "#633806", marginBottom: "1rem" }}>VIX {vix?.toFixed(1) || "…"} 불안 구간 — {vix > 35 ? "3~5회" : "2~3회"} 분할 매수 권장</div>}
             {buys.map((h, i) => {
               const key = `b${i}`; const sp = vix > 35 ? 5 : vix > 25 ? 3 : 1; return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < buys.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key]?.5 : 1 }}>

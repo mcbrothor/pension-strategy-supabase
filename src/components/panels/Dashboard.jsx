@@ -45,7 +45,7 @@ const HoldingsCard = ({ holdings, total }) => {
   );
 };
 
-export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo }) {
+export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vixLoading, onFetchVix, onGo }) {
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
@@ -56,7 +56,8 @@ export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo
   });
 
   // 전문 위험 지표 계산
-  const riskMetrics = estimateRiskMetrics(holdings, RISK_DATA, s?.annualRet?.base || 0.08);
+  const annualExpRet = s?.annualRet?.base || 0.08;
+  const riskMetrics = estimateRiskMetrics(holdings, RISK_DATA, annualExpRet);
   const sharpe = riskMetrics.sharpe;
   const vol = riskMetrics.vol;
 
@@ -64,7 +65,12 @@ export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: "1rem" }}>
         <MetaCard label="총 평가금액" value={fmt(total) + "원"} sub={new Date().toLocaleDateString("ko-KR")} />
-        <MetaCard label="현재 VIX" value={vixLoading ? "…" : (vix?.toFixed(1) || "연결 중")} sub={z.lbl + " / " + z.mode} subColor={z.color} />
+        <MetaCard 
+          label="현재 VIX" 
+          value={vixLoading ? "…" : (vix?.toFixed(1) || "연결 중")} 
+          sub={vixUpdatedAt ? `${vixSource} (${new Date(vixUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : z.lbl} 
+          subColor={vixUpdatedAt ? "var(--text-dim)" : z.color} 
+        />
         <MetaCard label="기대 변동성(σ)" value={fmtP(vol)} sub="연간 추정치" />
         <MetaCard label="샤프 지수" value={sharpe.toFixed(2)} sub={sharpe > 0.8 ? "매우 우수" : sharpe > 0.4 ? "양호" : "보통"} subColor={sharpe > 0.4 ? "var(--color-success)" : "var(--text-dim)"} />
       </div>
@@ -82,11 +88,14 @@ export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo
           </Card>
 
           <Card style={{ marginBottom: 0 }}>
-            <ST>시장 상황 진단 (KIS API)</ST>
+            <ST>시장 상황 진단 ({vixSource})</ST>
             <VixBar vix={vix} />
-            <div style={{ background: z.bg, borderRadius: "var(--radius-md)", padding: ".875rem 1rem", marginTop: 10 }}>
-              <Badge c={z.color} bg={z.color + "20"}>{z.mode}</Badge>
-              <span style={{ fontSize: 12, color: z.color, marginLeft: 8, lineHeight: 1.7 }}>{z.desc}</span>
+            <div style={{ backgroundColor: z.bg, borderRadius: "var(--radius-md)", padding: ".875rem 1rem", marginTop: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <Badge c={z.color} bg={z.color + "20"}>{z.mode}</Badge>
+                {vixUpdatedAt && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{new Date(vixUpdatedAt).toLocaleString()} 업데이트</span>}
+              </div>
+              <span style={{ fontSize: 12, color: z.color, lineHeight: 1.7 }}>{z.desc}</span>
             </div>
           </Card>
 
@@ -108,7 +117,7 @@ export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo
                 : " 자산 간 상관관계를 고려하여 더 분산된 전략으로의 교체를 검토해 보세요."}
               <br /><br />
               선택하신 <strong>{s.name}</strong> 전략은 연간 약 <strong>{fmtR(annualExpRet)}</strong>의 성장을 목표로 하며, 
-              VIX 지수가 {vix.toFixed(1)}인 현재 {z.mode} 구간에 있습니다.
+              VIX 지수는 {vix?.toFixed(1) || "…"}인 현재 {z.mode} 구간에 있습니다. (출처: {vixSource})
             </div>
           </Card>
         </div>

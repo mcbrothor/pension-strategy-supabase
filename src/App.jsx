@@ -40,7 +40,7 @@ export default function PensionPilot() {
 
   // Contexts
   const { user, login, signUp, logout, loading: authLoading } = useAuth();
-  const { vix, vixLoading, fetchVix, krEtfs, tickerMap } = useMarket();
+  const { vix, vixSource, vixUpdatedAt, vixLoading, fetchVix, krEtfs, tickerMap } = useMarket();
   const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings } = usePortfolio();
 
   const handleSelectStrategy = (id) => {
@@ -63,7 +63,14 @@ export default function PensionPilot() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {isDemo && <Badge c="#633806" bg="#faeeda">데모 모드</Badge>}
-            <Badge c={vixLoading ? "var(--text-dim)" : "#27500a"} bg={vixLoading ? "var(--bg-main)" : "#eaf3de"}>VIX {vixLoading ? "…" : vix.toFixed(1)}</Badge>
+            <Badge 
+              c={vixLoading ? "var(--text-dim)" : (vixSource === "KIS" ? "#1a73e8" : "#27500a")} 
+              bg={vixLoading ? "var(--bg-main)" : (vixSource === "KIS" ? "#eef6ff" : "#eaf3de")}
+              title={vixUpdatedAt ? `최종 업데이트: ${new Date(vixUpdatedAt).toLocaleString("ko-KR")} (출처: ${vixSource})` : "조회 중..."}
+            >
+              VIX {vixLoading ? "…" : (vix?.toFixed(1) || "…")}
+              {vixUpdatedAt && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>({vixSource})</span>}
+            </Badge>
             <Btn sm onClick={() => setTab("account")}>{user ? "계정 관리" : "로그인"}</Btn>
             <Btn sm onClick={() => setTab("report")} style={{ background: "var(--color-primary)", color: "#fff", border: "none" }}>월간 리포트 PDF</Btn>
           </div>
@@ -81,15 +88,15 @@ export default function PensionPilot() {
         </div>
 
         {/* 패널 */}
-        {tab === "dashboard" && <Dashboard portfolio={portfolio} vix={vix} vixLoading={vixLoading} onFetchVix={fetchVix} onGo={setTab} />}
+        {tab === "dashboard" && <Dashboard portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixLoading={vixLoading} onFetchVix={fetchVix} onGo={setTab} />}
         {tab === "strategy" && <StrategySelect accountType={portfolio.accountType} onStrategyApply={handleSelectStrategy} />}
-        {tab === "rebalance" && <RebalanceJudge portfolio={portfolio} vix={vix} />}
+        {tab === "rebalance" && <RebalanceJudge portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} />}
         {tab === "roadmap" && <RetirementRoadmap strategyId={portfolio.strategy} />}
         {tab === "entry" && <EntryPanel portfolio={portfolio} onSave={saveHoldings} krEtfs={krEtfs} tickerMap={tickerMap} />}
         {tab === "compare" && <CompareWeights portfolio={portfolio} />}
         {tab === "alerts" && <AlertsPanel portfolio={portfolio} onStopLossChange={v => setPortfolio(p => ({ ...p, stopLoss: v }))} onMddChange={v => setPortfolio(p => ({ ...p, mddLimit: v }))} />}
         {tab === "history" && <HistoryPanel portfolio={portfolio} />}
-        {tab === "report" && <MonthlyReport portfolio={portfolio} vix={vix} />}
+        {tab === "report" && <MonthlyReport portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} />}
         {tab === "account" && <AuthSetup user={user} onLogin={login} onSignUp={signUp} onLogout={logout} isSaving={isSaving} />}
       </div>
       <ConfirmModal {...modal} onClose={() => setModal(m => ({ ...m, isOpen: false }))} />
