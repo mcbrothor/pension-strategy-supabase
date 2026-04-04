@@ -17,7 +17,7 @@ export function MarketProvider({ children }) {
   const fetchVix = async () => {
     setVixLoading(true);
     try {
-      // 1. 전용 VIX 브리지 API 시도 (KIS 우선 순위 포함됨)
+      // /api/vix는 서버 단에서 KIS(1순위) -> Yahoo(2순위) 순으로 조회합니다.
       const res = await fetch("/api/vix");
       if (res.ok) {
         const data = await res.json();
@@ -35,28 +35,8 @@ export function MarketProvider({ children }) {
           return;
         }
       }
-      
-      // 2. 실패 시 야후 파이낸스 백업 시도 (프론트엔드 직접 호출)
-      const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX');
-      const directRes = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
-      if (directRes.ok) {
-        const wrapper = await directRes.json();
-        const d = JSON.parse(wrapper.contents);
-        const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (typeof val === "number" && val > 0) {
-          const newData = {
-            vix: val,
-            source: "Yahoo",
-            updatedAt: new Date().toISOString()
-          };
-          setVix(newData.vix);
-          setVixSource(newData.source);
-          setVixUpdatedAt(newData.updatedAt);
-          localStorage.setItem('vix_data', JSON.stringify(newData));
-        }
-      }
     } catch (e) {
-      console.warn("VIX 조회 최종 실패:", e.message);
+      console.warn("VIX 조회 실패:", e.message);
     }
     setVixLoading(false);
   };

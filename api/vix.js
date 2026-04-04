@@ -79,20 +79,20 @@ module.exports = async function handler(req, res) {
     console.warn("KIS VIX Fetch Failed:", e.message);
   }
 
-  // 2. Stooq Fallback
+  // 2. Yahoo Finance Fallback
   if (!result) {
     try {
-      const csv = await fetch("https://stooq.com/q/d/l/?s=^vix&i=d", {
-        headers: { "User-Agent": "Mozilla/5.0" }
-      }).then(r => r.text());
-      const lines = csv.trim().split("\n");
-      const last = lines[lines.length - 1] || "";
-      const close = Number(last.split(",")[4]);
-      if (Number.isFinite(close) && close > 0) {
-        result = { vix: close, source: "Stooq" };
+      const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX';
+      const yRes = await fetch(yahooUrl);
+      if (yRes.ok) {
+        const d = await yRes.json();
+        const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (typeof val === "number" && val > 0) {
+          result = { vix: val, source: "Yahoo" };
+        }
       }
     } catch (e) {
-      console.warn("Stooq VIX Fetch Failed:", e.message);
+      console.warn("Yahoo VIX Fetch Failed:", e.message);
     }
   }
 
@@ -104,6 +104,5 @@ module.exports = async function handler(req, res) {
   }
 
   res.writeHead(500, { ...corsHeaders(), "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: false, error: "All data sources failed" }));
+  res.end(JSON.stringify({ ok: false, error: "KIS and Yahoo both failed" }));
 };
-
