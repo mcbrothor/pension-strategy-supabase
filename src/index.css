@@ -92,6 +92,23 @@ input:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
 }
 
+/* Optimization for table inputs */
+.premium-table input, .premium-table select {
+  font-size: 13px !important;
+  padding: 6px 10px !important; 
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 60px;
+  border: 1px solid #d1d5db !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.premium-table input:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1) !important;
+}
+
 /* Data Table refinement (Ergonomic High-Contrast) */
 .premium-table {
   width: 100%;
@@ -102,17 +119,20 @@ input:focus, select:focus {
   background: #f8fafc;
   color: var(--text-dim);
   font-weight: 700;
-  font-size: 0.8rem;
-  padding: 15px 12px;
+  font-size: 0.75rem;
+  padding: 12px 10px;
   text-align: left;
   border-bottom: 2px solid var(--border-glass);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap; /* Prevent "평가 금액" from wrapping */
 }
 .premium-table td {
-  padding: 12px;
+  padding: 14px 10px;
   background: #ffffff;
   border-bottom: 1px solid var(--border-glass);
+  vertical-align: middle; /* Ensure all row content is centered vertically */
+  white-space: nowrap;
 }
 /* Zebra Striping for distinct sectioning */
 .premium-table tr:nth-child(even) td {
