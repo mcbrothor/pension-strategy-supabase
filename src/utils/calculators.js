@@ -45,19 +45,37 @@ export function checkWithdraw(bal, monthly, rate, years) {
 }
 
 /**
- * 포트폴리오 변동성 및 샤프지수 추정 (정적 가중치 기반)
+ * 포트폴리오 변동성 및 샤프지수 산출 (정적 가중치 기반)
  * @param {Array} holdings { cls, target } 
- * @param {Object} riskMap 각 자산군별 변동성 데이터
+ * @param {Object} riskData 각 자산군별 표준편차 (sigma)
+ * @param {number} expectedReturn 전략별 기대 수익률 (0.085 등)
  */
-export function estimateRiskMetrics(holdings, riskMap) {
-  // 간단한 선형 결합 추정 (상관관계는 1로 가정하는 보수적 접근 or 평균값 활용)
-  let vol = 0;
+export function estimateRiskMetrics(holdings, riskData, expectedReturn = 0.08) {
+  if (!holdings || holdings.length === 0) return { vol: 0, sharpe: 0 };
+
+  // 1. 포트폴리오 변동성 추정 (단순 가중 평균 sigma)
+  // 실제로는 상관계수 행렬(Covariance Matrix)이 필요하지만, 
+  // 개인용에서는 자산군별 가중 합산으로 보수적 추정치를 제공합니다.
+  let totalVol = 0;
+  let totalWeight = 0;
+
   holdings.forEach(h => {
-    vol += (Number(h.target) / 100) * (riskMap[h.cls] || 0.1);
+    const weight = (Number(h.target) || 0) / 100;
+    const sigma = riskData[h.cls] || 0.15; // 기본값 15%
+    totalVol += weight * sigma;
+    totalWeight += weight;
   });
-  
-  // 리스크 프리 레이트 (국고채 3년물 등) 대략 3% 가정
-  const rf = 0.03;
-  // 기대 수익률은 전략별로 다르지만, 여기서는 가중 평균 수익률을 넣을 수도 있음
-  return { vol, sharpe: 0 }; // 실제 기대수익률은 외부에서 계산하여 주입 권장
+
+  // 비중이 100%가 아닐 경우 조정 (현금 비중 고려 등)
+  const vol = totalWeight > 0 ? totalVol : 0;
+
+  // 2. 샤프지수 계산 (Sharpe = (Rp - Rf) / sigma)
+  const rf = 0.03; // 무위험 수익률 3% 가정 (국고채 3년물 수준)
+  const excessReturn = expectedReturn - rf;
+  const sharpe = vol > 0 ? excessReturn / vol : 0;
+
+  return { 
+    vol: Math.round(vol * 1000) / 10, // % 단위 (예: 12.5)
+    sharpe: Math.round(sharpe * 100) / 100 // 소수점 2자리 (예: 0.85)
+  };
 }

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 const MarketContext = createContext();
 
 export function MarketProvider({ children }) {
-  const [vix, setVix] = useState(23.4);
+  const [vix, setVix] = useState(null);
   const [vixLoading, setVixLoading] = useState(false);
   const [krEtfs, setKrEtfs] = useState([]);
   const [tickerMap, setTickerMap] = useState({});
@@ -12,19 +12,18 @@ export function MarketProvider({ children }) {
   const fetchVix = async () => {
     setVixLoading(true);
     try {
-      const res = await fetch("/api/kis-price?ticker=VIX&type=overseas&excd=NYS");
+      // 1. 전용 VIX 엔드포인트 시도 (/api/vix)
+      const res = await fetch("/api/vix");
       if (res.ok) {
-        const text = await res.text();
-        if (!text.trim().startsWith("//") && !text.trim().startsWith("<")) {
-          const data = JSON.parse(text);
-          if (typeof data.price === "number" && data.price > 0) {
-            setVix(data.price);
-            setVixLoading(false);
-            return;
-          }
+        const data = await res.json();
+        if (data.ok && typeof data.vix === "number") {
+          setVix(data.vix);
+          setVixLoading(false);
+          return;
         }
       }
       
+      // 2. 실패 시 야후 파이낸스 백업 시도
       const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX');
       const directRes = await fetch(`https://api.allorigins.win/get?url=${yahooUrl}`);
       if (directRes.ok) {
@@ -34,7 +33,9 @@ export function MarketProvider({ children }) {
         if (typeof val === "number" && val > 0) setVix(val);
       }
     } catch (e) {
-      console.warn("VIX 조회 오류:", e.message);
+      console.warn("VIX 조회 실패 (종합):", e.message);
+      // 최종 실패 시 기본값이라도 설정 (과거 데이터)
+      if (!vix) setVix(23.4);
     }
     setVixLoading(false);
   };

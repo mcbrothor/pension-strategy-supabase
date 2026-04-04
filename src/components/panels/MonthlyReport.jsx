@@ -13,10 +13,10 @@ export default function MonthlyReport({ portfolio, vix }) {
   const holdings = portfolio.holdings.map(h => ({ ...h, cur: total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0 }));
   
   // 위험 지표 계산
-  const metrics = estimateRiskMetrics(holdings, RISK_DATA);
-  const annualExpRet = s.annualRet.base;
-  const sharpe = (annualExpRet - 0.03) / (metrics.vol || 1);
-  const riskLevel = metrics.vol < 0.08 ? "보수적" : metrics.vol < 0.15 ? "중립적" : "공격적";
+  const metrics = estimateRiskMetrics(holdings, RISK_DATA, s?.annualRet?.base || 0.08);
+  const sharpe = metrics.sharpe;
+  const vol = metrics.vol;
+  const riskLevel = vol < 8 ? "보수적" : vol < 15 ? "중립적" : "공격적";
 
   // 매니저 인사이트 생성 로직
   const z = getZone(vix);

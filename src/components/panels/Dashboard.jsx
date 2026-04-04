@@ -56,17 +56,17 @@ export default function Dashboard({ portfolio, vix, vixLoading, onFetchVix, onGo
   });
 
   // 전문 위험 지표 계산
-  const riskMetrics = estimateRiskMetrics(holdings, RISK_DATA);
-  const annualExpRet = s.annualRet.base; // 기대수익률 (전략 기반)
-  const sharpe = (annualExpRet - 0.03) / (riskMetrics.vol || 1); // 무위험수익률 3% 가정
+  const riskMetrics = estimateRiskMetrics(holdings, RISK_DATA, s?.annualRet?.base || 0.08);
+  const sharpe = riskMetrics.sharpe;
+  const vol = riskMetrics.vol;
 
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: "1rem" }}>
         <MetaCard label="총 평가금액" value={fmt(total) + "원"} sub={new Date().toLocaleDateString("ko-KR")} />
-        <MetaCard label="현재 VIX" value={vixLoading ? "…" : vix.toFixed(1)} sub={z.lbl + " / " + z.mode} subColor={z.color} />
-        <MetaCard label="기대 변동성(σ)" value={fmtP(riskMetrics.vol * 100)} sub="연간 추정치" />
-        <MetaCard label="샤프 지수" value={sharpe.toFixed(2)} sub={sharpe > 0.5 ? "효율적" : "보통"} subColor={sharpe > 0.5 ? "var(--color-success)" : "var(--text-dim)"} />
+        <MetaCard label="현재 VIX" value={vixLoading ? "…" : (vix?.toFixed(1) || "연결 중")} sub={z.lbl + " / " + z.mode} subColor={z.color} />
+        <MetaCard label="기대 변동성(σ)" value={fmtP(vol)} sub="연간 추정치" />
+        <MetaCard label="샤프 지수" value={sharpe.toFixed(2)} sub={sharpe > 0.8 ? "매우 우수" : sharpe > 0.4 ? "양호" : "보통"} subColor={sharpe > 0.4 ? "var(--color-success)" : "var(--text-dim)"} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "1rem", alignItems: "start" }}>
