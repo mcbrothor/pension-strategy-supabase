@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase';
 const MarketContext = createContext();
 
 export function MarketProvider({ children }) {
-  // 초기값: localStorage에서 불러오거나 없으면 기본값 사용
-  const savedVix = JSON.parse(localStorage.getItem('vix_data') || '{"vix": 23.4, "source": "Default", "updatedAt": null}');
+  // 초기값: localStorage에서 불러오거나 없으면 null 사용
+  const savedVix = JSON.parse(localStorage.getItem('vix_data') || '{"vix": null, "source": "Init", "updatedAt": null}');
   
   const [vix, setVix] = useState(savedVix.vix);
   const [vixSource, setVixSource] = useState(savedVix.source);
