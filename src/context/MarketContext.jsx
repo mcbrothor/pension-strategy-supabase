@@ -11,13 +11,15 @@ export function MarketProvider({ children }) {
   const [vixSource, setVixSource] = useState(savedVix.source);
   const [vixUpdatedAt, setVixUpdatedAt] = useState(savedVix.updatedAt);
   const [vixLoading, setVixLoading] = useState(false);
+  const [vixError, setVixError] = useState(null);
   const [krEtfs, setKrEtfs] = useState([]);
   const [tickerMap, setTickerMap] = useState({});
+  const [masterError, setMasterError] = useState(null);
 
   const fetchVix = async () => {
     setVixLoading(true);
+    setVixError(null);
     try {
-      // /api/vix는 서버 단에서 KIS(1순위) -> Yahoo(2순위) 순으로 조회합니다.
       const res = await fetch("/api/vix");
       if (res.ok) {
         const data = await res.json();
@@ -33,15 +35,21 @@ export function MarketProvider({ children }) {
           localStorage.setItem('vix_data', JSON.stringify(newData));
           setVixLoading(false);
           return;
+        } else {
+          setVixError(data.error || "VIX 데이터 형식이 올바르지 않습니다.");
         }
+      } else {
+        setVixError(`VIX 조회 실패 (Status: ${res.status})`);
       }
     } catch (e) {
       console.warn("VIX 조회 실패:", e.message);
+      setVixError(e.message);
     }
     setVixLoading(false);
   };
 
   const loadTickerMaster = async () => {
+    setMasterError(null);
     try {
       const { data, error } = await supabase
         .from("stock_master")
@@ -63,6 +71,7 @@ export function MarketProvider({ children }) {
       }
     } catch (err) {
       console.error("Master Data Load Error:", err.message);
+      setMasterError(err.message);
     }
   };
 
@@ -72,7 +81,10 @@ export function MarketProvider({ children }) {
   }, []);
 
   return (
-    <MarketContext.Provider value={{ vix, vixSource, vixUpdatedAt, vixLoading, fetchVix, krEtfs, tickerMap }}>
+    <MarketContext.Provider value={{ 
+      vix, vixSource, vixUpdatedAt, vixLoading, vixError, 
+      fetchVix, krEtfs, tickerMap, masterError 
+    }}>
       {children}
     </MarketContext.Provider>
   );

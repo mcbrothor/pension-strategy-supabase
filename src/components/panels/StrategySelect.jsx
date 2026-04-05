@@ -90,12 +90,22 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
                   </div>
                 );
               })()}
+              
               {selS.type === "momentum" && selS.calc && (
-                <div style={{ background: "#faeeda", border: "0.5px solid #f0a500", borderRadius: 8, padding: ".875rem", marginBottom: "1rem", fontSize: 11, color: "#633806", lineHeight: 1.8, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap" }}>
-                  <div style={{ fontWeight: 600, marginBottom: 5, fontFamily: "var(--font-sans)" }}>매월 계산 방법</div>
-                  {selS.calc}
+                <div style={{ background: "var(--bg-main)", border: "1.5px solid #ba7517", borderRadius: 10, padding: "1rem", marginBottom: "1.25rem", position: "relative" }}>
+                  <div style={{ position: "absolute", top: -10, right: 10, background: "#ba7517", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>AI MOMENTUM ENGINE</div>
+                  <div style={{ fontWeight: 600, marginBottom: 8, color: "#633806", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>⚙️</span> 매월 실시간 모멘텀 계산식
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.8, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", background: "var(--bg-card)", padding: 10, borderRadius: 6 }}>
+                    {selS.calc}
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 11, color: "#ba7517", fontWeight: 500 }}>
+                    * 이 전략은 매월 말 시장 상황에 따라 구성 종목과 비중이 동적으로 변합니다.
+                  </div>
                 </div>
               )}
+
               <ST>{selS.type === "fixed" ? "구성 ETF (삼성증권 연금계좌 매수 가능)" : "대상 ETF 풀"}</ST>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead><tr style={{ borderBottom: "0.5px solid var(--border-glass)" }}>

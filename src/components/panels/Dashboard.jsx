@@ -45,7 +45,7 @@ const HoldingsCard = ({ holdings, total }) => {
   );
 };
 
-export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vixLoading, onFetchVix, onGo }) {
+export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vixLoading, vixError, masterError, onFetchVix, onGo }) {
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
@@ -63,6 +63,16 @@ export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vix
 
   return (
     <div>
+      {(vixError || masterError) && (
+        <div style={{ backgroundColor: "#fcebeb", border: "1px solid #a32d2d", borderRadius: 8, padding: "10px 15px", marginBottom: "1rem", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div style={{ fontSize: 12, color: "#a32d2d", fontWeight: 500 }}>
+            {vixError && <div>VIX 데이터 오류: {vixError} (캐시된 데이터를 표시합니다)</div>}
+            {masterError && <div>종목 마스터 오류: {masterError} (일부 기능이 제한될 수 있습니다)</div>}
+          </div>
+          <Btn sm onClick={onFetchVix} style={{ marginLeft: "auto", borderColor: "#a32d2d", color: "#a32d2d" }}>재시도</Btn>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: "1rem" }}>
         <MetaCard label="총 평가금액" value={fmt(total) + "원"} sub={new Date().toLocaleDateString("ko-KR")} />
         <MetaCard 
@@ -100,7 +110,8 @@ export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vix
           </Card>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: "0.5rem" }}>
-            <Btn onClick={() => onGo("rebalance")}>리밸런싱 판단 →</Btn>
+            <Btn onClick={() => onGo("assets")}>자산 비중 조정 →</Btn>
+            <Btn onClick={() => onGo("report_view")}>월간 리포트 분석 →</Btn>
             <Btn primary onClick={() => onGo("roadmap")}>은퇴 로드맵 →</Btn>
           </div>
         </div>

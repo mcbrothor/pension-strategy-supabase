@@ -3,7 +3,7 @@ import { Card, ST, Badge, Btn } from "../common/index.jsx";
 import { fmt, fmtP } from "../../utils/formatters.js";
 import { ASSET_COLORS, STRATEGIES, ASSET_CLASSES } from "../../constants/index.js";
 
-export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap = {} }) {
+export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap = {}, masterError }) {
   const [rows, setRows] = useState(portfolio.holdings || []);
   const [loading, setLoading] = useState({});
   const [saving, setSaving] = useState(false);
@@ -28,7 +28,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
     if (!ticker) return;
     setLoading(prev => ({ ...prev, [idx]: true }));
     try {
-      const res = await fetch(`/api/kis/price?ticker=${ticker}`);
+      const res = await fetch(`/api/kis-price?ticker=${ticker}`);
       const data = await res.json();
       if (data.price) {
         updateRow(idx, "price", data.price);
@@ -89,6 +89,11 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
 
   return (
     <div>
+      {masterError && (
+        <div style={{ backgroundColor: "#faeeda", border: "1px solid #ba7517", borderRadius: 8, padding: "8px 12px", marginBottom: "1rem", fontSize: 12, color: "#633806" }}>
+          ⚠️ 종목 자동 검색 데이터를 불러올 수 없습니다: {masterError} (수동 입력을 이용해 주세요)
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1rem", alignItems: "start" }}>
         <div>
           <Card>
