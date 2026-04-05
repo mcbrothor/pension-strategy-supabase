@@ -4,7 +4,7 @@ import { STRATEGIES, ASSET_COLORS } from "../../constants/index.js";
 import { irpLimit } from "../../utils/helpers.js";
 
 export default function StrategySelect({ accountType, onStrategyApply }) {
-  const [acc, setAcc] = useState(accountType || "IRP");
+  const [acc, setAcc] = useState(accountType || "연금저축");
   const [filt, setFilt] = useState("all");
   const [sel, setSel] = useState(null);
   const limit = irpLimit(acc);

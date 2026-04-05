@@ -63,7 +63,7 @@ export const ZONES = [
 ];
 
 export const DEMO_PORTFOLIO = {
-  strategy:"allseason", accountType:"IRP", lastRebalDate:"2025-01-15",
+  strategy:"allseason", accountType:"연금저축", lastRebalDate:"2025-01-15",
   rebalPeriod:"연 1회", stopLoss:-20, mddLimit:-15, mdd:-6.8,
   total:54320000,
   holdings:[
