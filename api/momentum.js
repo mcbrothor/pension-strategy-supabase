@@ -71,16 +71,16 @@ const KIS_TICKER_MAP = {
   "현금MMF": { ticker: "BIL", excd: "NYS" },
 };
 
-const STOOQ_MAP = {
-  "미국주식": "SPY.US",
-  "선진국주식": "EFA.US",
-  "미국중기채권": "IEF.US",
-  "미국장기채권": "TLT.US",
-  "원자재": "DBC.US",
-  "부동산리츠": "VNQ.US",
-  "금": "GLD.US",
-  "신흥국주식": "EEM.US",
-  "현금MMF": "BIL.US",
+const YAHOO_TICKER_MAP = {
+  "미국주식": "SPY",
+  "선진국주식": "EFA",
+  "미국중기채권": "IEF",
+  "미국장기채권": "TLT",
+  "원자재": "DBC",
+  "부동산리츠": "VNQ",
+  "금": "GLD",
+  "신흥국주식": "EEM",
+  "현금MMF": "BIL",
 };
 
 async function fetchKISMonthlyCloses(tickerInfo, monthsNeeded) {
@@ -102,21 +102,29 @@ async function fetchKISMonthlyCloses(tickerInfo, monthsNeeded) {
   return data.output2.slice(0, monthsNeeded).map(d => Number(d.last)).reverse();
 }
 
-async function fetchStooqMonthlyCloses(stooqTicker, monthsNeeded) {
-  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqTicker)}&i=m`;
+/**
+ * Yahoo Finance Fallback (v8 chart API)
+ */
+async function fetchYahooMonthlyCloses(ticker, monthsNeeded) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1mo&range=2y`;
   try {
-    const text = await fetch(url).then(r => r.text());
-    const lines = String(text).trim().split("\n");
-    lines.shift();
-    const closes = [];
-    for (const line of lines) {
-      const parts = line.split(",");
-      if (parts.length < 5) continue;
-      const close = Number(parts[4]);
-      if (Number.isFinite(close)) closes.push(close);
-    }
-    return closes.slice(-monthsNeeded);
-  } catch (e) { return []; }
+    const res = await fetch(url, {
+       headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    const d = await res.json();
+    const result = d?.chart?.result?.[0];
+    if (!result) return [];
+    
+    // Yahoo v8은 timestamps와 indicators.adjclose[0].adjclose가 매칭됨
+    const adjCloses = result.indicators?.adjclose?.[0]?.adjclose || result.indicators?.quote?.[0]?.close || [];
+    const validCloses = adjCloses.filter(v => v != null);
+    
+    // 가장 최근 데이터부터 monthsNeeded만큼 가져오기
+    return validCloses.slice(-monthsNeeded);
+  } catch (e) {
+    console.error(`Yahoo fetch error for ${ticker}:`, e.message);
+    return [];
+  }
 }
 
 function retPctFromCloses(closes, monthsBack) {
@@ -302,11 +310,16 @@ module.exports = async function handler(req, res) {
       try {
         const kisInfo = KIS_TICKER_MAP[cls];
         if (kisInfo) closes = await fetchKISMonthlyCloses(kisInfo, 13);
-      } catch (e) { console.warn(`KIS fail for ${cls}:`, e.message); }
+      } catch (e) { 
+        console.warn(`KIS fail for ${cls}:`, e.message); 
+      }
       
+      // KIS 실패 시 Yahoo Finance 폴백
       if (!closes || closes.length === 0) {
-        const stooqTicker = STOOQ_MAP[cls];
-        if (stooqTicker) closes = await fetchStooqMonthlyCloses(stooqTicker, 13);
+        const yahooTicker = YAHOO_TICKER_MAP[cls];
+        if (yahooTicker) {
+           closes = await fetchYahooMonthlyCloses(yahooTicker, 13);
+        }
       }
       priceSeries[cls] = { monthlyCloses: closes };
     }
