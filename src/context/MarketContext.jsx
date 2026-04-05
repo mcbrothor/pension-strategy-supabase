@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { calculatePearsonCorr } from '../utils/calculators';
 
 const MarketContext = createContext();
 
@@ -15,6 +16,13 @@ export function MarketProvider({ children }) {
   const [krEtfs, setKrEtfs] = useState([]);
   const [tickerMap, setTickerMap] = useState({});
   const [masterError, setMasterError] = useState(null);
+
+  // 상관관계 상태 (로컬 스토리지 캐시)
+  const savedCorr = JSON.parse(localStorage.getItem('corr_data') || '{"avg": 0, "matrix": {}, "updatedAt": null}');
+  const [avgCorrelation, setAvgCorrelation] = useState(savedCorr.avg || 0);
+  const [corrUpdatedAt, setCorrUpdatedAt] = useState(savedCorr.updatedAt);
+  const [corrLoading, setCorrLoading] = useState(false);
+
 
   const fetchVix = async () => {
     setVixLoading(true);
@@ -39,7 +47,13 @@ export function MarketProvider({ children }) {
           setVixError(data.error || "VIX 데이터 형식이 올바르지 않습니다.");
         }
       } else {
-        setVixError(`VIX 조회 실패 (Status: ${res.status})`);
+        // 500 에러 등의 경우 상세 메시지 추출 시도
+        try {
+          const errData = await res.json();
+          setVixError(errData.error || `VIX 조회 실패 (Status: ${res.status})`);
+        } catch (e) {
+          setVixError(`VIX 서버 오류 (Status: ${res.status})`);
+        }
       }
     } catch (e) {
       console.warn("VIX 조회 실패:", e.message);
@@ -75,6 +89,60 @@ export function MarketProvider({ children }) {
     }
   };
 
+  const refreshCorrelation = async (holdings) => {
+    if (!holdings || holdings.length < 2) {
+      setAvgCorrelation(0);
+      return;
+    }
+    setCorrLoading(true);
+    try {
+      const hData = [];
+      // 1. 각 종목별 과거 60일 시세 병렬 조회
+      const requests = holdings.map(async (h) => {
+        const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
+        const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
+        const data = await res.json();
+        if (data.prices && data.prices.length > 10) {
+          // 일일 수익률(Returns) 계산
+          const returns = [];
+          for (let i = 1; i < data.prices.length; i++) {
+            returns.push((data.prices[i] - data.prices[i-1]) / data.prices[i-1]);
+          }
+          return { etf: h.etf, returns };
+        }
+        return null;
+      });
+
+      const results = (await Promise.all(requests)).filter(r => r !== null);
+      if (results.length < 2) throw new Error("계산 가능한 종목 데이터가 부족합니다.");
+
+      // 2. 피어슨 상관계수 행렬 및 평균 계산
+      let totalCorr = 0;
+      let count = 0;
+      const matrix = {};
+
+      for (let i = 0; i < results.length; i++) {
+        for (let j = i + 1; j < results.length; j++) {
+          const rho = calculatePearsonCorr(results[i].returns, results[j].returns);
+          totalCorr += rho;
+          count++;
+          matrix[`${results[i].etf}-${results[j].etf}`] = rho;
+        }
+      }
+
+      const avg = count > 0 ? totalCorr / count : 0;
+      const newCorrObj = { avg, matrix, updatedAt: new Date().toISOString() };
+      
+      setAvgCorrelation(avg);
+      setCorrUpdatedAt(newCorrObj.updatedAt);
+      localStorage.setItem('corr_data', JSON.stringify(newCorrObj));
+    } catch (e) {
+      console.error("Correlation error:", e.message);
+    } finally {
+      setCorrLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchVix();
     loadTickerMaster();
@@ -83,7 +151,8 @@ export function MarketProvider({ children }) {
   return (
     <MarketContext.Provider value={{ 
       vix, vixSource, vixUpdatedAt, vixLoading, vixError, 
-      fetchVix, krEtfs, tickerMap, masterError 
+      fetchVix, krEtfs, tickerMap, masterError,
+      avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation
     }}>
       {children}
     </MarketContext.Provider>

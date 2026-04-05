@@ -3,7 +3,9 @@ import { Card, ST, Badge, Btn, MetaCard, AllocBar, VixBar } from "../common/inde
 import { fmt, fmtP, fmtR } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { ASSET_COLORS, RISK_DATA } from "../../constants/index.js";
-import { estimateRiskMetrics } from "../../utils/calculators.js";
+import { estimateRiskMetrics, calculateVixPercentile } from "../../utils/calculators.js";
+import { supabase } from "../../lib/supabase.js";
+
 
 const HoldingsCard = ({ holdings, total }) => {
   return (
@@ -45,8 +47,27 @@ const HoldingsCard = ({ holdings, total }) => {
   );
 };
 
-export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vixLoading, vixError, masterError, onFetchVix, onGo }) {
+export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vixLoading, vixError, masterError, onFetchVix, onGo, avgCorrelation, corrUpdatedAt, corrLoading, onRefreshCorr }) {
+  const [prevTotal, setPrevTotal] = React.useState(null);
+
+  React.useEffect(() => {
+    const fetchDiff = async () => {
+      // 한 달 전 스냅샷 가져오기 (가장 최근 것 중 현재 날짜보다 25~35일 전 데이터 권장, 여기서는 단순 LIMIT)
+      const { data } = await supabase
+        .from("snapshots")
+        .select("total_amt")
+        .order("date", { ascending: false })
+        .limit(2); // 0은 오늘, 1은 어제 혹은 직전
+      
+      if (data && data.length > 1) {
+        setPrevTotal(Number(data[1].total_amt));
+      }
+    };
+    fetchDiff();
+  }, []);
+
   const z = getZone(vix);
+
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
   
@@ -74,16 +95,22 @@ export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vix
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: "1rem" }}>
-        <MetaCard label="총 평가금액" value={fmt(total) + "원"} sub={new Date().toLocaleDateString("ko-KR")} />
+        <MetaCard 
+          label="총 평가금액" 
+          value={fmt(total) + "원"} 
+          sub={prevTotal ? (total - prevTotal >= 0 ? `▲${fmt(total - prevTotal)}` : `▼${fmt(Math.abs(total - prevTotal))}`) : new Date().toLocaleDateString("ko-KR")} 
+          subColor={prevTotal ? (total - prevTotal >= 0 ? "var(--color-success)" : "#0c447c") : "var(--text-dim)"}
+        />
         <MetaCard 
           label="현재 VIX" 
           value={vixLoading ? "…" : (vix?.toFixed(1) || "연결 중")} 
-          sub={vixUpdatedAt ? `${vixSource} (${new Date(vixUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : z.lbl} 
-          subColor={vixUpdatedAt ? "var(--text-dim)" : z.color} 
+          sub={vix ? `역사적 위치: 상위 ${calculateVixPercentile(vix)}%` : z.lbl} 
+          subColor={vix ? (vix > 25 ? "#a32d2d" : "var(--text-dim)") : z.color} 
         />
         <MetaCard label="기대 변동성(σ)" value={fmtP(vol)} sub="연간 추정치" />
         <MetaCard label="샤프 지수" value={sharpe.toFixed(2)} sub={sharpe > 0.8 ? "매우 우수" : sharpe > 0.4 ? "양호" : "보통"} subColor={sharpe > 0.4 ? "var(--color-success)" : "var(--text-dim)"} />
       </div>
+
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "1rem", alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -126,10 +153,23 @@ export default function Dashboard({ portfolio, vix, vixSource, vixUpdatedAt, vix
               {sharpe > 0.5 
                 ? " 위험 대비 기대수익률이 우수한 구조입니다." 
                 : " 자산 간 상관관계를 고려하여 더 분산된 전략으로의 교체를 검토해 보세요."}
-              <br /><br />
-              선택하신 <strong>{s.name}</strong> 전략은 연간 약 <strong>{fmtR(annualExpRet)}</strong>의 성장을 목표로 하며, 
-              VIX 지수는 {vix?.toFixed(1) || "…"}인 현재 {z.mode} 구간에 있습니다. (출처: {vixSource})
+              
+              {avgCorrelation > 0.7 && (
+                <div style={{ color: "#a32d2d", marginTop: 8, fontWeight: 600 }}>
+                  ⚠️ 경고: 최근 자산 간 상관관계가 {avgCorrelation.toFixed(2)}로 급증했습니다. 
+                  분산 효과가 낮아졌으니 현금 또는 안전 자산 비중 확대를 검토하세요.
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--bg-main)", borderRadius: 6 }}>
+                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                  평균 상관계수: <strong>{avgCorrelation.toFixed(2)}</strong> 
+                  {corrUpdatedAt && <span style={{ marginLeft: 6 }}>({new Date(corrUpdatedAt).toLocaleDateString()})</span>}
+                </span>
+                <Btn sm onClick={onRefreshCorr} disabled={corrLoading}>{corrLoading ? "…" : "상관계수 갱신"}</Btn>
+              </div>
             </div>
+
           </Card>
         </div>
       </div>

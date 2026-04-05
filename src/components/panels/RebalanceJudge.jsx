@@ -4,7 +4,8 @@ import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { ASSET_COLORS } from "../../constants/index.js";
 
-export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt }) {
+export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation }) {
+
   const [step, setStep] = useState(0);
   const [checked, setChecked] = useState({});
   const REBAL_DAYS = { "연 1회": 365, "분기 1회": 90, "월 1회": 30 };
@@ -33,10 +34,12 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
     { type: isOverdue ? "danger" : isTime ? "warn" : "ok", title: `리밸런싱 주기: ${portfolio.rebalPeriod} — ${elapsed}일 경과`, body: isOverdue ? `기준(${required}일) 초과 — 즉시 실행 권장.` : isTime ? `기준의 90% 도달 — 실행 시점.` : `${required - elapsed}일 후 예정.` },
     { type: vix && vix > 35 ? "danger" : vix && vix > 25 ? "warn" : "ok", title: `VIX ${vix?.toFixed(1) || "…"} — ${z.lbl} (${z.mode})`, body: z.desc },
     { type: portfolio.mdd < portfolio.mddLimit ? "danger" : "ok", title: `MDD ${portfolio.mdd.toFixed(1)}% (제한선 ${portfolio.mddLimit}%)`, body: portfolio.mdd < portfolio.mddLimit ? "MDD 제한선 초과 — 방어 자산 비중 확보 우선." : "MDD 정상 범위. 전략 기준대로 진행하세요." },
+    { type: avgCorrelation > 0.7 ? "danger" : avgCorrelation > 0.6 ? "warn" : "ok", title: `자산 상관관계: ${avgCorrelation.toFixed(2)}`, body: avgCorrelation > 0.7 ? "자산 간 동반 하락 위험이 큽니다. 현금 비중 확보를 권장합니다." : "분산 투자 효과가 안정적으로 유지되고 있습니다." },
+    { type: holdings.filter(h => Math.abs(h.diff) >= 5).length > 0 ? "warn" : "ok", title: `자산 비중 이격 점검 (±5%p)`, body: holdings.filter(h => Math.abs(h.diff) >= 5).length > 0 ? `일부 자산의 비중이 목표에서 크게 벗어났습니다 (${holdings.filter(h => Math.abs(h.diff) >= 5).length}건).` : "모든 자산의 비중이 목표 범위 내에 있습니다." },
     ...(portfolio.accountType === "IRP" ? [{ type: irpRisk > 70 ? "danger" : irpRisk > 65 ? "warn" : "ok", title: `IRP 위험자산 ${irpRisk}% (한도 70%)`, body: irpRisk > 70 ? "IRP 한도 초과. 주식·금·원자재 비중을 70% 이하로 맞추세요." : "IRP 위험자산 정상 범위." }] : []),
     ...(stopLossItems.length > 0 ? [{ type: "danger", title: `손절 경고: ${stopLossItems.map(h => h.etf).join(", ")}`, body: `손절 기준(${portfolio.stopLoss}%) 초과. 우선 매도 후 리밸런싱하세요.` }] : []),
-    ...(holdings.filter(h => Math.abs(h.diff) >= 5).length > 0 ? [{ type: "warn", title: `5%p 이상 이탈: ${holdings.filter(h => Math.abs(h.diff) >= 5).length}개`, body: holdings.filter(h => Math.abs(h.diff) >= 5).map(h => `${h.etf} ${fmtP(h.diff)}`).join(" / ") }] : []),
   ];
+
 
   const tabs = ["① 실행 시점 판단", "② 판단 근거", "③ 실행 지시"];
   const doneCount = Object.values(checked).filter(Boolean).length;
@@ -104,14 +107,22 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
             </div>
           </Card>
           <Card>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".5rem" }}>
-              <ST style={{ marginBottom: 0 }}>VIX 시장 신호</ST>
-              {vixUpdatedAt && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{vixSource} · {new Date(vixUpdatedAt).toLocaleString()}</span>}
+            <ST>심리적 방어 지표 (MDD 관리)</ST>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>
+              <span>현재 낙폭: <strong>{portfolio.mdd.toFixed(1)}%</strong></span>
+              <span>한계선: <strong>{portfolio.mddLimit}%</strong></span>
             </div>
-            <VixBar vix={vix} />
-            <div style={{ background: z.bg, borderRadius: 8, padding: ".875rem 1rem", marginTop: 10 }}>
-              <Badge c={z.color} bg={z.color + "20"}>{z.mode}</Badge>
-              <span style={{ fontSize: 12, color: z.color, marginLeft: 8 }}>{z.desc}</span>
+            <div style={{ height: 10, background: "var(--bg-main)", borderRadius: 5, overflow: "hidden", position: "relative" }}>
+              <div style={{ 
+                height: "100%", 
+                width: `${Math.min(Math.abs(portfolio.mdd / portfolio.mddLimit) * 100, 100)}%`, 
+                background: Math.abs(portfolio.mdd) > Math.abs(portfolio.mddLimit) * 0.8 ? "#a32d2d" : "#3b6d11",
+                borderRadius: 5,
+                transition: "width 0.5s ease"
+              }} />
+            </div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8, textAlign: "center" }}>
+              {Math.abs(portfolio.mdd) > Math.abs(portfolio.mddLimit) * 0.8 ? "⚠️ 한계 MDD에 근접했습니다. 리스크 관리에 유의하세요." : "✅ 손실 규모가 관리 가능한 범위 내에 있습니다."}
             </div>
           </Card>
           <Card>

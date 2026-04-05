@@ -35,7 +35,11 @@ export default function PensionPilot() {
 
   // Contexts
   const { user, login, signUp, logout, loading: authLoading } = useAuth();
-  const { vix, vixSource, vixUpdatedAt, vixLoading, vixError, fetchVix, krEtfs, tickerMap, masterError } = useMarket();
+  const { 
+    vix, vixSource, vixUpdatedAt, vixLoading, vixError, fetchVix, krEtfs, tickerMap, masterError,
+    avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation
+  } = useMarket();
+
   const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings } = usePortfolio();
 
   const handleSelectStrategy = (id) => {
@@ -92,10 +96,21 @@ export default function PensionPilot() {
         {/* 패널 */}
         {tab === "dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <Dashboard portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixLoading={vixLoading} vixError={vixError} masterError={masterError} onFetchVix={fetchVix} onGo={setTab} />
+            <Dashboard 
+              portfolio={portfolio} 
+              vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixLoading={vixLoading} vixError={vixError} 
+              masterError={masterError} onFetchVix={fetchVix} onGo={setTab}
+              avgCorrelation={avgCorrelation} corrUpdatedAt={corrUpdatedAt} corrLoading={corrLoading} onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
+            />
+
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1.5rem" }}>
               <HistoryPanel portfolio={portfolio} />
-              <RebalanceJudge portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} />
+              <RebalanceJudge 
+                portfolio={portfolio} 
+                vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} 
+                avgCorrelation={avgCorrelation}
+              />
+
             </div>
           </div>
         )}
