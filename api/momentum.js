@@ -2,8 +2,8 @@
  * Serverless Endpoint: /api/momentum
  *
  * 목적:
- * - KIS(한국투자증권) API를 주 데이터 소스로 사용하여 모멘텀 전략의 동적 비중을 산출합니다.
- * - KIS API 호출 실패 시 Stooq API를 폴백(Fallback)으로 사용하여 안정성을 확보합니다.
+ * - 지표(Canary), 공격(Attack), 방어(Defensive), 고정(Fixed) 역할을 기반으로
+ *   자산군별 동적 비중을 산출합니다.
  */
 
 const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
@@ -86,11 +86,8 @@ const STOOQ_MAP = {
 async function fetchKISMonthlyCloses(tickerInfo, monthsNeeded) {
   const token = await getAccessToken();
   if (!token) throw new Error("KIS Token failure");
-
   const { ticker, excd } = tickerInfo;
-  // HHDFS76410100 (해외주식 기간별 시세) - GUBN=2 (월간)
   const url = `${API_BASE_URL}/uapi/overseas-stock/v1/quotations/inquire-daily-chartprice?AUTH=""&EXCD=${excd}&SYMB=${ticker}&GUBN=2&BYMD=""&MODP=1`;
-  
   const res = await fetch(url, {
     headers: {
       "content-type": "application/json",
@@ -100,11 +97,8 @@ async function fetchKISMonthlyCloses(tickerInfo, monthsNeeded) {
       "tr_id": "HHDFS76410100"
     }
   });
-
   const data = await res.json();
-  if (!data?.output2) {
-    throw new Error(data?.msg1 || "No output2 from KIS");
-  }
+  if (!data?.output2) throw new Error(data?.msg1 || "No output2");
   return data.output2.slice(0, monthsNeeded).map(d => Number(d.last)).reverse();
 }
 
@@ -113,7 +107,7 @@ async function fetchStooqMonthlyCloses(stooqTicker, monthsNeeded) {
   try {
     const text = await fetch(url).then(r => r.text());
     const lines = String(text).trim().split("\n");
-    lines.shift(); // header
+    lines.shift();
     const closes = [];
     for (const line of lines) {
       const parts = line.split(",");
@@ -122,21 +116,15 @@ async function fetchStooqMonthlyCloses(stooqTicker, monthsNeeded) {
       if (Number.isFinite(close)) closes.push(close);
     }
     return closes.slice(-monthsNeeded);
-  } catch (e) {
-    console.error("Stooq Fetch Error:", e);
-    return [];
-  }
+  } catch (e) { return []; }
 }
 
-// --- Momentum Helpers ---
 function retPctFromCloses(closes, monthsBack) {
   const n = closes.length;
-  const idx0 = n - monthsBack - 1;
-  const idx1 = n - 1;
-  if (idx0 < 0 || idx1 < 0) return null;
-  const c0 = Number(closes[idx0]);
-  const c1 = Number(closes[idx1]);
-  if (!Number.isFinite(c0) || !Number.isFinite(c1) || c0 === 0) return null;
+  const i0 = n - monthsBack - 1, i1 = n - 1;
+  if (i0 < 0 || i1 < 0) return null;
+  const c0 = Number(closes[i0]), c1 = Number(closes[i1]);
+  if (!c0 || isNaN(c1)) return null;
   return ((c1 / c0) - 1) * 100;
 }
 
@@ -148,84 +136,152 @@ function ma(closes, window) {
   return s / window;
 }
 
-// --- Strategy Computations ---
-function computeGTAA5Targets(priceSeries) {
-  const assetSet = [
-    { cls: "미국주식", w: 20 },
-    { cls: "선진국주식", w: 20 },
-    { cls: "미국중기채권", w: 20 },
-    { cls: "원자재", w: 20 },
-    { cls: "부동산리츠", w: 20 },
-  ];
-  const cashCls = "현금MMF";
-  const selected = [];
-  for (const a of assetSet) {
-    const series = priceSeries?.[a.cls]?.monthlyCloses;
-    if (!series || series.length < 11) continue;
-    const last = series[series.length - 1];
-    const avg10 = ma(series, 10);
-    if (last >= avg10) selected.push(a);
-  }
-  const baseSelected = selected.reduce((s, x) => s + x.w, 0);
+// --- Role-based Computations ---
+
+function computeGTAA5Targets(priceSeries, composition) {
   const targets = {};
-  for (const a of assetSet) targets[a.cls] = selected.some(s => s.cls === a.cls) ? a.w : 0;
-  targets[cashCls] = Math.max(0, 100 - baseSelected);
+  const dynamics = composition.filter(c => c.role === "dynamic");
+  let allocated = 0;
+
+  for (const c of dynamics) {
+    const closes = priceSeries[c.cls]?.monthlyCloses || [];
+    if (closes.length < 11) { targets[c.cls] = 0; continue; }
+    const last = closes[closes.length - 1];
+    const m10 = ma(closes, 10);
+    if (last >= m10) {
+      targets[c.cls] = c.w || 20;
+      allocated += targets[c.cls];
+    } else {
+      targets[c.cls] = 0;
+    }
+  }
+
+  const cashCls = composition.find(c => c.cls === "현금MMF")?.cls || "현금MMF";
+  targets[cashCls] = (targets[cashCls] || 0) + Math.max(0, 100 - allocated);
   return targets;
 }
 
-function computeDualMomentumTargets(priceSeries) {
-  const us = retPctFromCloses(priceSeries?.["미국주식"]?.monthlyCloses, 12);
-  const dev = retPctFromCloses(priceSeries?.["선진국주식"]?.monthlyCloses, 12);
-  const cash = retPctFromCloses(priceSeries?.["현금MMF"]?.monthlyCloses, 12);
-  const longBond = retPctFromCloses(priceSeries?.["미국장기채권"]?.monthlyCloses, 12);
-  if ([us, dev, cash, longBond].some(v => v == null)) return null;
-  if (us <= cash) return { "미국장기채권": 100 };
-  return us >= dev ? { "미국주식": 100 } : { "선진국주식": 100 };
+function computeDualMomentumTargets(priceSeries, composition) {
+  const indicator = composition.find(c => c.role === "indicator");
+  const relTargets = composition.filter(c => c.role === "relative_target");
+  const defensive = composition.find(c => c.role === "defensive");
+  const cashCls = "현금MMF";
+
+  const usRet = retPctFromCloses(priceSeries[indicator?.cls]?.monthlyCloses || [], 12);
+  const cashRet = retPctFromCloses(priceSeries[cashCls]?.monthlyCloses || [], 12);
+  
+  const targets = {};
+  composition.forEach(c => targets[c.cls] = 0);
+
+  // 절대 모멘텀: 현금보다 못하면 방어 자산
+  if (usRet == null || cashRet == null || usRet <= cashRet) {
+    if (defensive) targets[defensive.cls] = 100;
+    else targets[cashCls] = 100;
+    return targets;
+  }
+
+  // 상대 모멘텀: 지표 vs 상대 타겟들 중 최고 수익률
+  let bestCls = indicator.cls;
+  let bestRet = usRet;
+
+  for (const rt of relTargets) {
+    const r = retPctFromCloses(priceSeries[rt.cls]?.monthlyCloses || [], 12);
+    if (r != null && r > bestRet) {
+      bestRet = r;
+      bestCls = rt.cls;
+    }
+  }
+
+  targets[bestCls] = 100;
+  return targets;
 }
 
-function computeLAATargets(priceSeries) {
-  const spRet12m = retPctFromCloses(priceSeries?.["미국주식"]?.monthlyCloses, 12);
-  if (spRet12m == null) return null;
-  if (spRet12m < 0) return { "국내주식": 25, "금": 25, "미국중기채권": 25, "현금MMF": 25 };
-  return { "국내주식": 25, "금": 25, "미국중기채권": 25, "미국주식": 25 };
+function computeLAATargets(priceSeries, composition) {
+  const targets = {};
+  const fixed = composition.filter(c => c.role === "fixed");
+  const attack = composition.find(c => c.role === "attack");
+  const defensive = composition.find(c => c.role === "defensive");
+  
+  // 고정 비중 적용 (합계 75%)
+  fixed.forEach(c => targets[c.cls] = c.w || 0);
+
+  // 모멘텀 체크 (미국주식 지표 사용)
+  const indicatorCls = "미국주식"; 
+  const ret = retPctFromCloses(priceSeries[indicatorCls]?.monthlyCloses || [], 12);
+
+  const momentumWeight = 25;
+  if (ret != null && ret >= 0) {
+    if (attack) targets[attack.cls] = (targets[attack.cls] || 0) + momentumWeight;
+  } else {
+    const safeCls = defensive?.cls || "현금MMF";
+    targets[safeCls] = (targets[safeCls] || 0) + momentumWeight;
+  }
+  return targets;
 }
 
-function computeDAATargets(priceSeries) {
+function computeDAATargets(priceSeries, composition) {
   const score = (closes) => {
     const r1 = retPctFromCloses(closes, 1), r3 = retPctFromCloses(closes, 3), r6 = retPctFromCloses(closes, 6), r12 = retPctFromCloses(closes, 12);
     if ([r1, r3, r6, r12].some(v => v == null)) return null;
     return 12 * r1 + 4 * r3 + 2 * r6 + 1 * r12;
   };
-  const emerg = score(priceSeries?.["신흥국주식"]?.monthlyCloses || []);
-  const long = score(priceSeries?.["미국장기채권"]?.monthlyCloses || []);
-  if (emerg == null || long == null) return null;
-  if (emerg > 0 && long > 0) return { "미국주식": 70, "금": 30 };
-  if (emerg > 0 || long > 0) return { "미국주식": 35, "금": 15, "현금MMF": 50 };
-  return { "현금MMF": 100 };
+
+  const canaries = composition.filter(c => c.role === "canary");
+  let posCount = 0;
+  for (const c of canaries) {
+    const s = score(priceSeries[c.cls]?.monthlyCloses || []);
+    if (s != null && s > 0) posCount++;
+  }
+
+  const targets = {};
+  composition.forEach(c => targets[c.cls] = 0);
+
+  const attackGroup = composition.filter(c => c.role === "attack");
+  const defensiveGroup = composition.filter(c => c.role === "defensive");
+
+  let attackW = 0, defensiveW = 0;
+  if (posCount === 2) attackW = 100;
+  else if (posCount === 1) { attackW = 50; defensiveW = 50; }
+  else { defensiveW = 100; }
+
+  // 공격군 배분
+  if (attackW > 0) {
+    const totalRatio = attackGroup.reduce((sum, c) => sum + (c.w_ratio || 1), 0);
+    attackGroup.forEach(c => {
+      targets[c.cls] = Math.round((c.w_ratio || 1) / totalRatio * attackW * 10) / 10;
+    });
+  }
+
+  // 방어군 배분 (보통 하나임)
+  if (defensiveW > 0) {
+    const totalRatio = defensiveGroup.reduce((sum, c) => sum + (c.w_ratio || 1), 0);
+    defensiveGroup.forEach(c => {
+      targets[c.cls] = (targets[c.cls] || 0) + Math.round((c.w_ratio || 1) / totalRatio * defensiveW * 10) / 10;
+    });
+  }
+
+  return targets;
 }
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const momentumCache = globalThis.__MOMENTUM_CACHE__ || (globalThis.__MOMENTUM_CACHE__ = {});
 
 module.exports = async function handler(req, res) {
-  if (req?.method === "OPTIONS") {
-    res.writeHead(204, corsHeaders());
-    return res.end();
-  }
-  if (req?.method !== "POST") {
+  if (req?.method === "OPTIONS") { res.writeHead(204, corsHeaders()); return res.end(); }
+  if (req?.method !== "POST") { 
     res.writeHead(405, { ...corsHeaders(), "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: false, error: "POST required" }));
   }
 
   try {
     const body = await readJsonBody(req);
-    const strategyId = body?.strategyId || "";
+    const { strategyId, composition } = body;
     const asOf = body?.asOf ? String(body.asOf) : new Date().toISOString();
-    const cacheKey = `strategy:${strategyId}|asOf:${asOf.slice(0, 7)}`;
+    const cacheKey = `strat:${strategyId}:month:${asOf.slice(0, 7)}`;
 
-    if (!strategyId) {
+    if (!strategyId || !composition) {
       res.writeHead(400, { ...corsHeaders(), "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: false, error: "strategyId required" }));
+      return res.end(JSON.stringify({ ok: false, error: "strategyId and composition required" }));
     }
 
     const hit = momentumCache[cacheKey];
@@ -234,51 +290,41 @@ module.exports = async function handler(req, res) {
       return res.end(JSON.stringify(hit.value));
     }
 
-    const momentumStrategies = ["gtaa5", "dual_momentum", "laa", "daa"];
-    const priceSeries = {};
-    if (momentumStrategies.includes(strategyId)) {
-      let needed = [];
-      let msNeeded = 13;
-      if (strategyId === "gtaa5") { needed = ["미국주식", "선진국주식", "미국중기채권", "원자재", "부동산리츠", "현금MMF"]; msNeeded = 11; }
-      else if (strategyId === "dual_momentum") { needed = ["미국주식", "선진국주식", "미국장기채권", "현금MMF"]; }
-      else if (strategyId === "laa") { needed = ["미국주식"]; }
-      else if (strategyId === "daa") { needed = ["신흥국주식", "미국장기채권"]; }
+    // 필요한 모든 자산군의 시세 수집 (Indicator인 미국주식, 현금MMF 포함)
+    const neededCls = Array.from(new Set([
+      ...composition.map(c => c.cls),
+      "미국주식", "현금MMF"
+    ]));
 
-      for (const cls of needed) {
-        let closes = [];
-        try {
-          const kisInfo = KIS_TICKER_MAP[cls];
-          if (kisInfo) closes = await fetchKISMonthlyCloses(kisInfo, msNeeded);
-        } catch (e) {
-          console.warn(`KIS Fetch Error for ${cls}, falling back to Stooq:`, e.message);
-        }
-        if (!closes || closes.length === 0) {
-          const stooqTicker = STOOQ_MAP[cls];
-          if (stooqTicker) closes = await fetchStooqMonthlyCloses(stooqTicker, msNeeded);
-        }
-        priceSeries[cls] = { monthlyCloses: closes };
+    const priceSeries = {};
+    for (const cls of neededCls) {
+      let closes = [];
+      try {
+        const kisInfo = KIS_TICKER_MAP[cls];
+        if (kisInfo) closes = await fetchKISMonthlyCloses(kisInfo, 13);
+      } catch (e) { console.warn(`KIS fail for ${cls}:`, e.message); }
+      
+      if (!closes || closes.length === 0) {
+        const stooqTicker = STOOQ_MAP[cls];
+        if (stooqTicker) closes = await fetchStooqMonthlyCloses(stooqTicker, 13);
       }
+      priceSeries[cls] = { monthlyCloses: closes };
     }
 
     let targets = null;
-    let mode = "kis_dynamic_momentum";
-    if (strategyId === "gtaa5") targets = computeGTAA5Targets(priceSeries);
-    else if (strategyId === "dual_momentum") targets = computeDualMomentumTargets(priceSeries);
-    else if (strategyId === "laa") targets = computeLAATargets(priceSeries);
-    else if (strategyId === "daa") targets = computeDAATargets(priceSeries);
+    if (strategyId === "gtaa5") targets = computeGTAA5Targets(priceSeries, composition);
+    else if (strategyId === "dual_momentum") targets = computeDualMomentumTargets(priceSeries, composition);
+    else if (strategyId === "laa") targets = computeLAATargets(priceSeries, composition);
+    else if (strategyId === "daa") targets = computeDAATargets(priceSeries, composition);
 
-    if (!targets) {
-      res.writeHead(500, { ...corsHeaders(), "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: false, error: "Calculation failed" }));
-    }
+    if (!targets) throw new Error("Calculation failed");
 
-    const result = { ok: true, strategyId, targets, mode, updatedAt: new Date().toISOString() };
+    const result = { ok: true, strategyId, targets, mode: "role_based_momentum", updatedAt: new Date().toISOString() };
     momentumCache[cacheKey] = { value: result, expiresAt: Date.now() + CACHE_TTL_MS };
+    
     res.writeHead(200, { ...corsHeaders(), "Content-Type": "application/json" });
     res.end(JSON.stringify(result));
-
   } catch (e) {
-    console.error("Momentum Error:", e.message);
     res.writeHead(500, { ...corsHeaders(), "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: false, error: e.message }));
   }

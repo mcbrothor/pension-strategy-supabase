@@ -23,7 +23,10 @@ export function PortfolioProvider({ children }) {
       const res = await fetch("/api/momentum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategyId })
+        body: JSON.stringify({ 
+          strategyId,
+          composition: s.composition
+        })
       });
       const data = await res.json();
       if (data.ok && data.targets) {

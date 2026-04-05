@@ -37,22 +37,44 @@ export const STRATEGIES = [
     annualRet:{cons:0.06,base:0.085,opt:0.110},
     desc:"5개 자산을 10개월 이동평균 기준으로 편입·현금을 결정하는 절대 모멘텀 전략.",
     calc:"매월 말: 각 자산군 가격 ≥ 10개월 이동평균 → 보유(각 20%) / 이하 → 단기자금(KOFR) 교체",
-    composition:[{cls:"미국주식",w:20,risk:true},{cls:"선진국주식",w:20,risk:true},{cls:"미국중기채권",w:20,risk:false},{cls:"원자재",w:20,risk:true},{cls:"부동산리츠",w:20,risk:true}]},
+    composition:[
+      {cls:"미국주식",w:20,role:"dynamic",risk:true},
+      {cls:"선진국주식",w:20,role:"dynamic",risk:true},
+      {cls:"미국중기채권",w:20,role:"dynamic",risk:false},
+      {cls:"원자재",w:20,role:"dynamic",risk:true},
+      {cls:"부동산리츠",w:20,role:"dynamic",risk:true}
+    ]},
   { id:"dual_momentum", type:"momentum", level:"초급", name:"듀얼 모멘텀 (안토나치)", ret:"10~15%", mdd:"약 20%", rebal:"월 1회", irpRisk:100,
     annualRet:{cons:0.07,base:0.100,opt:0.130},
     desc:"상대 모멘텀(미국 vs 선진국)과 절대 모멘텀(KOFR 대비)을 결합하여 강세 자산에 집중 투자합니다.",
     calc:"① 미국주식 12M 수익률 > KOFR? YES→주식 NO→미국장기채 100%\n② 주식 시: 미국주식 vs 선진국주식 12M 비교 → 높은 쪽 100%",
-    composition:[{cls:"미국주식",w:null,risk:true},{cls:"선진국주식",w:null,risk:true},{cls:"미국장기채권",w:null,risk:false}]},
+    composition:[
+      {cls:"미국주식",role:"indicator",risk:true},
+      {cls:"선진국주식",role:"relative_target",risk:true},
+      {cls:"미국장기채권",role:"defensive",risk:false}
+    ]},
   { id:"laa", type:"momentum", level:"고급", name:"LAA (게으른 자산배분)", ret:"약 10%", mdd:"약 13%", rebal:"월 1회", irpRisk:75,
     annualRet:{cons:0.065,base:0.090,opt:0.115},
     desc:"75%를 고정 보유하고 25%만 모멘텀 운용하는 하이브리드 전략. 거래 빈도가 낮아 세금 효율이 높습니다.",
     calc:"매월 말 (25% 분량): 미국주식 < 200일 이평 AND 실업률 > 12M 이평\n→ 공격자산 전환 / 미충족 → 공격자산(나스닥) 유지",
-    composition:[{cls:"국내주식",w:25,risk:true},{cls:"금",w:25,risk:true},{cls:"미국중기채권",w:25,risk:false},{cls:"미국주식",w:25,risk:true}]},
+    composition:[
+      {cls:"국내주식",w:25,role:"fixed",risk:true},
+      {cls:"금",w:25,role:"fixed",risk:true},
+      {cls:"미국중기채권",w:25,role:"fixed",risk:false},
+      {cls:"미국주식",w:25,role:"attack",risk:true},
+      {cls:"현금MMF",w:0,role:"defensive",risk:false}
+    ]},
   { id:"daa", type:"momentum", level:"고급", name:"DAA (방어적 자산배분)", ret:"10~15%", mdd:"약 10%", rebal:"월 1회", irpRisk:100,
     annualRet:{cons:0.07,base:0.100,opt:0.130},
     desc:"카나리아 자산(신흥국주식·장기채) 모멘텀으로 공격/방어 비중을 동적 결정하여 하락장을 방어합니다.",
     calc:"카나리아(신흥국주식, 미국장기채권) 모멘텀 지수 계산:\n둘 다>0→공격100% / 하나>0→공격50% / 둘 다≤0→안전100%",
-    composition:[{cls:"신흥국주식",w:null,risk:true,note:"카나리아"},{cls:"미국장기채권",w:null,risk:false,note:"카나리아"},{cls:"미국주식",w:null,risk:true,note:"공격형"},{cls:"금",w:null,risk:true,note:"공격형"},{cls:"현금MMF",w:null,risk:false,note:"안전형"}]},
+    composition:[
+      {cls:"신흥국주식",role:"canary",risk:true},
+      {cls:"미국장기채권",role:"canary",risk:false},
+      {cls:"미국주식",role:"attack",w_ratio:70,risk:true},
+      {cls:"금",role:"attack",w_ratio:30,risk:true},
+      {cls:"현금MMF",role:"defensive",risk:false}
+    ]},
 ];
 
 export const ZONES = [
