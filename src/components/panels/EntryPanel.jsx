@@ -28,7 +28,11 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
     if (!ticker) return;
     setLoading(prev => ({ ...prev, [idx]: true }));
     try {
-      const res = await fetch(`/api/kis-price?ticker=${ticker}`);
+      // ticker가 숫자로 시작하면 국내로 간주 (필요 시 수정 가능)
+      const isDomestic = /^[0-9]/.test(ticker);
+      const url = `/api/kis-price?ticker=${ticker}${isDomestic ? "" : "&type=overseas"}`;
+      
+      const res = await fetch(url);
       const data = await res.json();
       if (data.price) {
         updateRow(idx, "price", data.price);
@@ -43,9 +47,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
 
   function updateRow(idx, key, val) {
     const next = [...rows];
-    let newVal = val;
     
-    // 자동 완성 선택 시 티커 및 자산군 자동 입력 로직
     if (key === "etf" && tickerMap[val]) {
       const info = tickerMap[val];
       next[idx] = { ...next[idx], etf: val, code: info.ticker, cls: info.assetClass || next[idx].cls };
@@ -53,16 +55,24 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
       next[idx] = { ...next[idx], [key]: val };
     }
 
-    if (key === "qty" || key === "price") {
-      const q = Number(key === "qty" ? val : next[idx].qty) || 0;
-      const p = Number(key === "price" ? val : next[idx].price) || 0;
-      next[idx].amt = q * p;
+    // 금액 계산 로직
+    if (next[idx].cls === "현금MMF") {
+      if (key === "amt") {
+        next[idx].qty = 0;
+        next[idx].price = 0;
+      }
+    } else {
+      if (key === "qty" || key === "price") {
+        const q = Number(key === "qty" ? val : next[idx].qty) || 0;
+        const p = Number(key === "price" ? val : next[idx].price) || 0;
+        next[idx].amt = q * p;
+      }
     }
     setRows(next);
   }
 
   function addRow() {
-    setRows([...rows, { etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0, target: 0, costAmt: 0 }]);
+    setRows([...rows, { etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0, costAmt: 0 }]);
   }
 
   function removeRow(idx) {
@@ -79,9 +89,9 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
     setSaving(true);
     try {
       await onSave(rows);
-      alert("잔고가 성공적으로 저장되었습니다.");
+      alert("잔고가 저장되었습니다.");
     } catch (e) {
-      alert("저장 중 오류가 발생했습니다: " + e.message);
+      alert("저장 오류: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -91,7 +101,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
     <div>
       {masterError && (
         <div style={{ backgroundColor: "#faeeda", border: "1px solid #ba7517", borderRadius: 8, padding: "8px 12px", marginBottom: "1rem", fontSize: 12, color: "#633806" }}>
-          ⚠️ 종목 자동 검색 데이터를 불러올 수 없습니다: {masterError} (수동 입력을 이용해 주세요)
+          ⚠️ 종목 자동 검색 데이터를 불러올 수 없습니다. {masterError}
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1rem", alignItems: "start" }}>
@@ -113,8 +123,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                   <th style={{ width: 140 }}>자산군</th>
                   <th style={{ textAlign: "right", width: 80 }}>수량</th>
                   <th style={{ textAlign: "right", width: 100 }}>현재가</th>
-                  <th style={{ textAlign: "right", width: 120 }}>평가금액</th>
-                  <th style={{ textAlign: "right", width: 80 }}>목표%</th>
+                  <th style={{ textAlign: "right", width: 140 }}>평가금액</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,8 +147,9 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                             onBlur={() => fetchPrice(r.code, i)} 
                             placeholder="티커" 
                             style={{ flex: 1, fontFamily: "monospace" }} 
+                            disabled={r.cls === "현금MMF"}
                           />
-                          <Btn sm onClick={() => fetchPrice(r.code, i)} disabled={loading[i] || !r.code} style={{ padding: "0 10px", minHeight: "28px" }}>
+                          <Btn sm onClick={() => fetchPrice(r.code, i)} disabled={loading[i] || !r.code || r.cls === "현금MMF"} style={{ padding: "0 10px", minHeight: "28px" }}>
                             {loading[i] ? "…" : "조회"}
                           </Btn>
                         </div>
@@ -151,16 +161,37 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                       </select>
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <input type="number" value={r.qty} onChange={e => updateRow(i, "qty", e.target.value)} style={{ textAlign: "right" }} />
+                      <input 
+                        type="number" 
+                        value={r.qty} 
+                        onChange={e => updateRow(i, "qty", e.target.value)} 
+                        style={{ textAlign: "right" }} 
+                        disabled={r.cls === "현금MMF"}
+                      />
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <input type="number" value={r.price} onChange={e => updateRow(i, "price", e.target.value)} style={{ textAlign: "right" }} />
-                    </td>
-                    <td style={{ textAlign: "right", fontWeight: 700, color: "var(--text-main)", fontSize: 14 }}>
-                      {fmt(r.amt)}
+                      <input 
+                        type="number" 
+                        value={r.price} 
+                        onChange={e => updateRow(i, "price", e.target.value)} 
+                        style={{ textAlign: "right" }} 
+                        disabled={r.cls === "현금MMF"}
+                      />
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <input type="number" value={r.target} onChange={e => updateRow(i, "target", e.target.value)} style={{ textAlign: "right" }} />
+                       {r.cls === "현금MMF" ? (
+                         <input 
+                            type="number" 
+                            value={r.amt} 
+                            onChange={e => updateRow(i, "amt", e.target.value)} 
+                            placeholder="금액 입력"
+                            style={{ textAlign: "right", fontWeight: 700, border: "1px solid var(--accent-main)" }}
+                         />
+                       ) : (
+                         <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: 14 }}>
+                           {fmt(r.amt)}
+                         </div>
+                       )}
                     </td>
                   </tr>
                 ))}
@@ -223,23 +254,9 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
               </div>
             ))}
           </Card>
-
-          <Card>
-            <ST>수익/손실 현황 (추정)</ST>
-            <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>총 평가 손익</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: diffAmt >= 0 ? "#a32d2d" : "#0c447c" }}>
-                {diffAmt >= 0 ? "+" : ""}{fmt(diffAmt)}원
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: diffAmt >= 0 ? "#a32d2d" : "#0c447c", marginTop: 4 }}>
-                {totalPrevAmt > 0 ? fmtP(diffAmt / totalPrevAmt * 100) : "0.0%"}
-              </div>
-            </div>
-          </Card>
         </div>
       </div>
       
-      {/* 종목 자동 완성 리스트 */}
       <datalist id="etf-list">
         {krEtfs.map((item, idx) => (
           <option key={idx} value={item.name}>{item.ticker} | {item.assetClass}</option>

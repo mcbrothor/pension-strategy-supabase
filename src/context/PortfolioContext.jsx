@@ -31,9 +31,6 @@ export function PortfolioProvider({ children }) {
       const data = await res.json();
       if (data.ok && data.targets) {
         setMomentumTargets(data.targets);
-        // 영구 저장: config 테이블의 metadata 필드(없다면 새로 정의) 등에 저장하거나 
-        // 별도 로그성 테이블이 없다면 일단 세션과 콘솔에 기록하여 추후 확장을 대비합니다.
-        console.log(`[Momentum] ${strategyId} targets updated:`, data.targets);
         return data.targets;
       }
     } catch (e) {
@@ -62,7 +59,6 @@ export function PortfolioProvider({ children }) {
       const strategyId = configs?.strategy_id || "allseason";
       const currentStrat = STRATEGIES.find(s => s.id === strategyId);
       
-      // 모멘텀 전략인 경우 실시간 비중 조회
       let dynamicTargets = {};
       if (currentStrat?.type === "momentum") {
         dynamicTargets = await fetchMomentumTargets(strategyId);
@@ -90,12 +86,13 @@ export function PortfolioProvider({ children }) {
 
       const mappedHoldings = (holdings || []).map(it => {
         const target = assetClassTargetMap[it.asset_class] || 0;
-
         return {
           etf: it.name,
           code: it.ticker,
           cls: it.asset_class,
-          target: target, 
+          target: target,
+          qty: Number(it.quantity) || 0,
+          price: Number(it.current_price) || 0,
           amt: Number(it.amount) || 0,
           costAmt: Number(it.cost_amt) || 0,
           cur: 0 
@@ -132,8 +129,10 @@ export function PortfolioProvider({ children }) {
       const saveDate = new Date().toISOString().split("T")[0];
       await supabase.from('holdings').delete().eq('user_id', user.id);
       
+      // 필터: 티커가 있고 (수량이 0보다 크거나 평가금액이 0보다 큰 경우)
+      // 현금MMF의 경우 수량이 0일 수 있으므로 평가금액 기준을 추가함.
       const insertItems = items
-        .filter(it => it.code && Number(it.qty) > 0)
+        .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0))
         .map(it => ({
           user_id: user.id,
           ticker: it.code,
@@ -158,7 +157,6 @@ export function PortfolioProvider({ children }) {
           weights[h.cls] = (weights[h.cls] || 0) + w;
         }
       });
-      // 소수점 첫째자리 반올림
       Object.keys(weights).forEach(k => {
         weights[k] = Math.round(weights[k] * 10) / 10;
       });
@@ -170,22 +168,6 @@ export function PortfolioProvider({ children }) {
         total_amt: total,
         weights: weights
       });
-
-      // 모멘텀 히스토리 저장 (만약 테이블이 있다면)
-      const currentStrat = STRATEGIES.find(s => s.id === portfolio.strategy);
-      if (currentStrat?.type === "momentum" && Object.keys(momentumTargets).length > 0) {
-        try {
-          await supabase.from('momentum_history').insert({
-            user_id: user.id,
-            strategy_id: portfolio.strategy,
-            date: saveDate,
-            targets: momentumTargets
-          });
-        } catch (mErr) {
-          console.warn("Momentum History Table missing or error:", mErr.message);
-          // 테이블이 없어도 메인 저장 로직은 계속 진행
-        }
-      }
 
       await loadPortfolio();
     } catch (e) {
@@ -207,13 +189,8 @@ export function PortfolioProvider({ children }) {
         strategy_id: strategyId,
         updated_at: new Date().toISOString()
       });
-      
-      // 전략 변경 시 모멘텀 즉시 조회
       const s = STRATEGIES.find(it => it.id === strategyId);
-      if (s?.type === "momentum") {
-        await fetchMomentumTargets(strategyId);
-      }
-
+      if (s?.type === "momentum") await fetchMomentumTargets(strategyId);
       await loadPortfolio();
     } catch (e) {
       console.error("Strategy Update Error:", e.message);
