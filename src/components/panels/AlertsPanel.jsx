@@ -45,7 +45,7 @@ export default function AlertsPanel({ portfolio, onStopLossChange, onMddChange }
           </div>
           <Btn danger sm onClick={() => onStopLossChange && onStopLossChange(slVal)}>저장</Btn>
           <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 10, lineHeight: 1.6 }}>
-            원가 기록은 구글 시트 [종목 입력] F열에 입력해야 수익률 계산이 가능합니다.
+            원가 기록은 [자산 관리] 탭에서 종목별로 입력해야 수익률 계산이 가능합니다.
           </div>
         </Card>
 

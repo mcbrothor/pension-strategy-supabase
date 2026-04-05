@@ -22,7 +22,7 @@ export default function HistoryPanel({ portfolio }) {
     <div>
       {history.length < 2 ? (
         <div style={{ background: "var(--bg-main)", borderRadius: "var(--border-radius-lg)", padding: "3rem", textAlign: "center", fontSize: 13, color: "var(--text-dim)" }}>
-          시트를 연결하고 잔고를 2회 이상 입력하면 변동 추이가 표시됩니다.
+          계정에 로그인하고 자산을 2회 이상 저장하면 변동 추이가 표시됩니다.
         </div>
       ) : (
         <>

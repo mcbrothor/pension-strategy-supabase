@@ -148,7 +148,7 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "1rem", paddingTop: "1rem", borderTop: "0.5px solid var(--border-glass)", flexWrap: "wrap", gap: 10 }}>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{selS.type === "fixed" ? `[투자전략설정] 시트 B1에 "${selS.id}" 입력 · 리밸런싱: ${selS.rebal}` : `매월 계산 후 [종목 입력] 시트에 기록 · 리밸런싱: ${selS.rebal}`}</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{selS.type === "fixed" ? `DB에 전략(${selS.id})이 직접 적용됩니다. · 리밸런싱: ${selS.rebal}` : `모멘텀 가중치가 실시간으로 자동 계산됩니다. · 리밸런싱: ${selS.rebal}`}</div>
             <Btn primary={selS.type === "fixed"} style={selS.type !== "fixed" ? { background: "#ba7517", color: "#fff", borderColor: "transparent" } : {}} onClick={() => onStrategyApply && onStrategyApply(selS.id)}>
               {selS.type === "fixed" ? "이 전략 적용하기" : "모멘텀 자동 계산 적용"}
             </Btn>
