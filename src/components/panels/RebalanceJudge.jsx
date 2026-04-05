@@ -14,32 +14,45 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
   const isOverdue = elapsed >= required, isTime = elapsed >= required * 0.9;
   const z = getZone(vix);
   const total = portfolio.total;
+  const assetClassResults = [];
+  const classMap = {};
 
-  const holdings = portfolio.holdings.map(h => {
-    const cur = total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0;
-    const diff = Math.round((cur - h.target) * 10) / 10;
-    const pnlPct = h.costAmt > 0 ? Math.round((h.amt - h.costAmt) / h.costAmt * 1000) / 10 : null;
-    const targetAmt = Math.round(total * h.target / 100);
-    const actionAmt = Math.round((h.amt - targetAmt) / 10000) * 10000;
-    return { ...h, cur, diff, pnlPct, targetAmt, actionAmt };
+  // 1. 자산군별 합산 (보유 금액 기준)
+  portfolio.holdings.forEach(h => {
+    const cls = h.cls || "기타";
+    if (!classMap[cls]) {
+      classMap[cls] = { cls, amt: 0, costAmt: 0, target: h.target };
+    }
+    classMap[cls].amt += h.amt;
+    classMap[cls].costAmt += h.costAmt;
   });
 
-  const irpRisk = Math.round(holdings.filter(h => ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"].includes(h.cls)).reduce((s, h) => s + h.cur, 0) * 10) / 10;
-  const sells = holdings.filter(h => h.actionAmt > 5000);
-  const buys = holdings.filter(h => h.actionAmt < -5000);
-  const holds = holdings.filter(h => Math.abs(h.actionAmt) <= 5000);
-  const stopLossItems = holdings.filter(h => h.pnlPct !== null && h.pnlPct < portfolio.stopLoss);
+  // 2. 자산군별 지표 계산
+  Object.values(classMap).forEach(c => {
+    const cur = total > 0 ? Math.round(c.amt / total * 1000) / 10 : 0;
+    const diff = Math.round((cur - c.target) * 10) / 10;
+    const pnlPct = c.costAmt > 0 ? Math.round((c.amt - c.costAmt) / c.costAmt * 1000) / 10 : null;
+    const targetAmt = Math.round(total * c.target / 100);
+    const actionAmt = Math.round((c.amt - targetAmt) / 10000) * 10000;
+    
+    assetClassResults.push({ ...c, cur, diff, pnlPct, targetAmt, actionAmt });
+  });
+
+  const irpRisk = Math.round(assetClassResults.filter(c => ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"].includes(c.cls)).reduce((s, c) => s + c.cur, 0) * 10) / 10;
+  const sells = assetClassResults.filter(c => c.actionAmt > 5000);
+  const buys = assetClassResults.filter(c => c.actionAmt < -5000);
+  const holds = assetClassResults.filter(c => Math.abs(c.actionAmt) <= 5000);
+  const stopLossItems = assetClassResults.filter(c => c.pnlPct !== null && c.pnlPct < portfolio.stopLoss);
 
   const reasons = [
     { type: isOverdue ? "danger" : isTime ? "warn" : "ok", title: `리밸런싱 주기: ${portfolio.rebalPeriod} — ${elapsed}일 경과`, body: isOverdue ? `기준(${required}일) 초과 — 즉시 실행 권장.` : isTime ? `기준의 90% 도달 — 실행 시점.` : `${required - elapsed}일 후 예정.` },
     { type: vix && vix > 35 ? "danger" : vix && vix > 25 ? "warn" : "ok", title: `VIX ${vix?.toFixed(1) || "…"} — ${z.lbl} (${z.mode})`, body: z.desc },
     { type: portfolio.mdd < portfolio.mddLimit ? "danger" : "ok", title: `MDD ${portfolio.mdd.toFixed(1)}% (제한선 ${portfolio.mddLimit}%)`, body: portfolio.mdd < portfolio.mddLimit ? "MDD 제한선 초과 — 방어 자산 비중 확보 우선." : "MDD 정상 범위. 전략 기준대로 진행하세요." },
     { type: avgCorrelation > 0.7 ? "danger" : avgCorrelation > 0.6 ? "warn" : "ok", title: `자산 상관관계: ${avgCorrelation.toFixed(2)}`, body: avgCorrelation > 0.7 ? "자산 간 동반 하락 위험이 큽니다. 현금 비중 확보를 권장합니다." : "분산 투자 효과가 안정적으로 유지되고 있습니다." },
-    { type: holdings.filter(h => Math.abs(h.diff) >= 5).length > 0 ? "warn" : "ok", title: `자산 비중 이격 점검 (±5%p)`, body: holdings.filter(h => Math.abs(h.diff) >= 5).length > 0 ? `일부 자산의 비중이 목표에서 크게 벗어났습니다 (${holdings.filter(h => Math.abs(h.diff) >= 5).length}건).` : "모든 자산의 비중이 목표 범위 내에 있습니다." },
+    { type: assetClassResults.filter(c => Math.abs(c.diff) >= 5).length > 0 ? "warn" : "ok", title: `자산 비중 이격 점검 (±5%p)`, body: assetClassResults.filter(c => Math.abs(c.diff) >= 5).length > 0 ? `일부 자산의 비중이 목표에서 크게 벗어났습니다 (${assetClassResults.filter(c => Math.abs(c.diff) >= 5).length}건).` : "모든 자산의 비중이 목표 범위 내에 있습니다." },
     ...(portfolio.accountType === "IRP" ? [{ type: irpRisk > 70 ? "danger" : irpRisk > 65 ? "warn" : "ok", title: `IRP 위험자산 ${irpRisk}% (한도 70%)`, body: irpRisk > 70 ? "IRP 한도 초과. 주식·금·원자재 비중을 70% 이하로 맞추세요." : "IRP 위험자산 정상 범위." }] : []),
-    ...(stopLossItems.length > 0 ? [{ type: "danger", title: `손절 경고: ${stopLossItems.map(h => h.etf).join(", ")}`, body: `손절 기준(${portfolio.stopLoss}%) 초과. 우선 매도 후 리밸런싱하세요.` }] : []),
+    ...(stopLossItems.length > 0 ? [{ type: "danger", title: `손절 경고: ${stopLossItems.map(c => c.cls).join(", ")}`, body: `손절 기준(${portfolio.stopLoss}%) 초과. 우선 매도 후 리밸런싱하세요.` }] : []),
   ];
-
 
   const tabs = ["① 실행 시점 판단", "② 판단 근거", "③ 실행 지시"];
   const doneCount = Object.values(checked).filter(Boolean).length;
@@ -126,8 +139,8 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
             </div>
           </Card>
           <Card>
-            <ST>현재 비중 편차</ST>
-            {holdings.map((h, i) => <AllocBar key={i} label={h.etf} pct={h.cur} target={h.target} color={ASSET_COLORS[h.cls] || "#888"} />)}
+            <ST>현재 자산군 비중 편차</ST>
+            {assetClassResults.map((c, i) => <AllocBar key={i} label={c.cls} pct={c.cur} target={c.target} color={ASSET_COLORS[c.cls] || "#888"} />)}
           </Card>
           <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn primary onClick={() => setStep(1)}>판단 근거 확인 →</Btn></div>
         </div>
@@ -146,21 +159,21 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
             {reasons.map((r, i) => <ReasonBox key={i} {...r} />)}
           </Card>
           <Card>
-            <ST>자산별 판단</ST>
+            <ST>자산군별 판단</ST>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead><tr style={{ borderBottom: "0.5px solid var(--border-glass)" }}>{["ETF", "현재", "목표", "편차", "수익률", "판단"].map(h => <th key={h} style={{ textAlign: "left", padding: "5px 8px", fontSize: 11, color: "var(--text-dim)", fontWeight: 600 }}>{h}</th>)}</tr></thead>
-              <tbody>{holdings.map((h, i) => {
-                const isSL = h.pnlPct !== null && h.pnlPct < portfolio.stopLoss;
-                const act = isSL ? "손절 우선" : h.actionAmt > 5000 ? "매도" : h.actionAmt < -5000 ? "매수" : "유지";
+              <thead><tr style={{ borderBottom: "0.5px solid var(--border-glass)" }}>{["자산군", "현재", "목표", "편차", "수익률", "판단"].map(h => <th key={h} style={{ textAlign: "left", padding: "5px 8px", fontSize: 11, color: "var(--text-dim)", fontWeight: 600 }}>{h}</th>)}</tr></thead>
+              <tbody>{assetClassResults.map((c, i) => {
+                const isSL = c.pnlPct !== null && c.pnlPct < portfolio.stopLoss;
+                const act = isSL ? "손절 우선" : c.actionAmt > 5000 ? "매도" : c.actionAmt < -5000 ? "매수" : "유지";
                 const aC = isSL ? "#791f1f" : act === "매도" ? "#a32d2d" : act === "매수" ? "#0c447c" : "#27500a";
                 const aBg = isSL ? "#fcebeb" : act === "매도" ? "#fcebeb" : act === "매수" ? "#e6f1fb" : "#eaf3de";
                 return (
                   <tr key={i} style={{ borderBottom: "0.5px solid var(--border-glass)" }}>
-                    <td style={{ padding: "7px 8px" }}><div style={{ fontWeight: 500 }}>{h.etf.replace(" (H)", "")}</div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>{h.code}</div></td>
-                    <td style={{ padding: "7px 8px", fontWeight: 500 }}>{h.cur}%</td>
-                    <td style={{ padding: "7px 8px", color: "var(--text-dim)" }}>{h.target}%</td>
-                    <td style={{ padding: "7px 8px", fontWeight: 600, color: Math.abs(h.diff) >= 5 ? (h.diff > 0 ? "#a32d2d" : "#0c447c") : "#27500a" }}>{fmtP(h.diff)}</td>
-                    <td style={{ padding: "7px 8px", color: h.pnlPct === null ? "var(--text-dim)" : h.pnlPct < 0 ? "#a32d2d" : "#3b6d11", fontWeight: 500 }}>{h.pnlPct != null ? fmtP(h.pnlPct) : "—"}</td>
+                    <td style={{ padding: "7px 8px" }}><div style={{ fontWeight: 600, fontSize: 13 }}>{c.cls}</div></td>
+                    <td style={{ padding: "7px 8px", fontWeight: 500 }}>{c.cur}%</td>
+                    <td style={{ padding: "7px 8px", color: "var(--text-dim)" }}>{c.target}%</td>
+                    <td style={{ padding: "7px 8px", fontWeight: 600, color: Math.abs(c.diff) >= 5 ? (c.diff > 0 ? "#a32d2d" : "#0c447c") : "#27500a" }}>{fmtP(c.diff)}</td>
+                    <td style={{ padding: "7px 8px", color: c.pnlPct === null ? "var(--text-dim)" : c.pnlPct < 0 ? "#a32d2d" : "#3b6d11", fontWeight: 500 }}>{c.pnlPct != null ? fmtP(c.pnlPct) : "—"}</td>
                     <td style={{ padding: "7px 8px" }}><Badge c={aC} bg={aBg}>{act}</Badge></td>
                   </tr>
                 );
@@ -179,44 +192,44 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
             <div style={{ background: "#eaf3de", borderRadius: 8, padding: ".875rem", textAlign: "center" }}><div style={{ fontSize: 11, color: "#27500a", fontWeight: 600, marginBottom: 4 }}>유지</div><div style={{ fontSize: 20, fontWeight: 500, color: "#3b6d11" }}>{holds.length}건</div></div>
           </div>
           {sells.length > 0 && <Card>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "#791f1f", marginBottom: ".75rem" }}>매도 — 비중 초과 자산</div>
-            {sells.map((h, i) => {
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#791f1f", marginBottom: ".75rem" }}>매도 — 비중 초과 자산군</div>
+            {sells.map((c, i) => {
               const key = `s${i}`; return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < sells.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key]?.5 : 1 }}>
                   <input type="checkbox" checked={!!checked[key]} onChange={e => setChecked(p => ({ ...p, [key]: e.target.checked }))} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer" }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 13, fontWeight: 500, textDecoration: checked[key] ? "line-through" : "none" }}>{h.etf}</span><span style={{ fontFamily: "monospace", fontSize: 10, background: "var(--bg-main)", padding: "1px 5px", borderRadius: 3, color: "var(--text-dim)" }}>{h.code}</span><Badge c="#791f1f" bg="#fcebeb">매도</Badge></div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 14, fontWeight: 600, textDecoration: checked[key] ? "line-through" : "none" }}>{c.cls}</span><Badge c="#791f1f" bg="#fcebeb">매도</Badge></div>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>현재 {c.cur}% → 목표 {c.target}% · 약 {fmt(c.actionAmt)}원 규모 축소</div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 16, fontWeight: 500, color: "#a32d2d" }}>-{fmt(h.actionAmt)}원</div></div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 16, fontWeight: 500, color: "#a32d2d" }}>-{fmt(c.actionAmt)}원</div></div>
                 </div>
               );
             })}
           </Card>}
           {buys.length > 0 && <Card>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "#0c447c", marginBottom: ".75rem" }}>매수 — 비중 부족 자산</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#0c447c", marginBottom: ".75rem" }}>매수 — 비중 부족 자산군</div>
             {vix && vix > 25 && <div style={{ background: "#faeeda", borderRadius: 8, padding: ".75rem 1rem", fontSize: 12, color: "#633806", marginBottom: "1rem" }}>VIX {vix?.toFixed(1) || "…"} 불안 구간 — {vix > 35 ? "3~5회" : "2~3회"} 분할 매수 권장</div>}
-            {buys.map((h, i) => {
+            {buys.map((c, i) => {
               const key = `b${i}`; const sp = vix > 35 ? 5 : vix > 25 ? 3 : 1; return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < buys.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key]?.5 : 1 }}>
                   <input type="checkbox" checked={!!checked[key]} onChange={e => setChecked(p => ({ ...p, [key]: e.target.checked }))} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer" }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 13, fontWeight: 500, textDecoration: checked[key] ? "line-through" : "none" }}>{h.etf}</span><span style={{ fontFamily: "monospace", fontSize: 10, background: "var(--bg-main)", padding: "1px 5px", borderRadius: 3, color: "var(--text-dim)" }}>{h.code}</span><Badge c="#0c447c" bg="#e6f1fb">매수</Badge>{sp > 1 && <Badge c="#633806" bg="#faeeda">{sp}회 분할</Badge>}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>현재 {h.cur}% → 목표 {h.target}% · 현재 {fmt(h.amt)}원 → 목표 {fmt(h.targetAmt)}원{sp > 1 ? ` · 1회당 약 ${fmt(Math.round(Math.abs(h.actionAmt) / sp / 10000) * 10000)}원` : ""}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 14, fontWeight: 600, textDecoration: checked[key] ? "line-through" : "none" }}>{c.cls}</span><Badge c="#0c447c" bg="#e6f1fb">매수</Badge>{sp > 1 && <Badge c="#633806" bg="#faeeda">{sp}회 분할</Badge>}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>현재 {c.cur}% → 목표 {c.target}% · 약 {fmt(Math.abs(c.actionAmt))}원 규모 확보{sp > 1 ? ` · 1회당 약 ${fmt(Math.round(Math.abs(c.actionAmt) / sp / 10000) * 10000)}원` : ""}</div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 16, fontWeight: 500, color: "#185fa5" }}>+{fmt(Math.abs(h.actionAmt))}원</div></div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 16, fontWeight: 500, color: "#185fa5" }}>+{fmt(Math.abs(c.actionAmt))}원</div></div>
                 </div>
               );
             })}
           </Card>}
-          {holds.length > 0 && <Card><div style={{ fontSize: 11, fontWeight: 500, color: "#27500a", marginBottom: ".75rem" }}>유지</div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{holds.map((h, i) => <div key={i} style={{ background: "#eaf3de", borderRadius: 8, padding: ".625rem .875rem", fontSize: 12 }}><span style={{ fontWeight: 500, color: "#27500a" }}>{h.etf.replace(" (H)", "")}</span><span style={{ color: "#3b6d11", marginLeft: 8 }}>{h.cur}%</span></div>)}</div></Card>}
+          {holds.length > 0 && <Card><div style={{ fontSize: 11, fontWeight: 500, color: "#27500a", marginBottom: ".75rem" }}>유지</div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{holds.map((c, i) => <div key={i} style={{ background: "#eaf3de", borderRadius: 8, padding: ".625rem .875rem", fontSize: 12 }}><span style={{ fontWeight: 600, color: "#27500a" }}>{c.cls}</span><span style={{ color: "#3b6d11", marginLeft: 8 }}>{c.cur}%</span></div>)}</div></Card>}
           <Card accent={doneCount === totalActions && totalActions > 0 ? "#3b6d11" : undefined}>
-            <div style={{ display: "flex", alignItems: "center", justifyBetween: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
               <div><div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3 }}>실행 완료 체크</div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>{doneCount} / {totalActions} 완료{doneCount === totalActions && totalActions > 0 ? " — 모든 주문 완료!" : ""}</div></div>
               {doneCount === totalActions && totalActions > 0 && <div style={{ background: "#eaf3de", borderRadius: 8, padding: ".75rem 1rem", fontSize: 12, color: "#27500a", fontWeight: 500 }}>다음 리밸런싱 예정일: {new Date(Date.now() + required * 86400000).toLocaleDateString("ko-KR")}</div>}
             </div>
           </Card>
-          <div style={{ display: "flex", justifyStart: "flex-start" }}><Btn onClick={() => setStep(1)}>← 판단 근거</Btn></div>
+          <div style={{ display: "flex", justifyContent: "flex-start" }}><Btn onClick={() => setStep(1)}>← 판단 근거</Btn></div>
         </div>
       )}
     </div>

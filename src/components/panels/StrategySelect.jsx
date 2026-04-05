@@ -106,45 +106,37 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
                 </div>
               )}
 
-              <ST>{selS.type === "fixed" ? "구성 ETF (삼성증권 연금계좌 매수 가능)" : "대상 ETF 풀"}</ST>
+              <ST>{selS.type === "fixed" ? "전략 자산군 배분" : "투자 대상 자산군"}</ST>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead><tr style={{ borderBottom: "0.5px solid var(--border-glass)" }}>
-                  <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>ETF명</th>
-                  <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>코드</th>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>자산군</th>
                   <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>{selS.type === "fixed" ? "비중" : "역할"}</th>
                   <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>위험</th>
                 </tr></thead>
-                <tbody>{selS.etfs.map((e, i) => (
+                <tbody>{selS.composition.map((c, i) => (
                   <tr key={i} style={{ borderBottom: "0.5px solid var(--border-glass)" }}>
-                    <td style={{ padding: "6px 6px" }}><div style={{ fontWeight: 500, fontSize: 12 }}>{e.name}</div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>{e.cls}</div></td>
-                    <td style={{ padding: "6px 6px" }}><span style={{ fontFamily: "monospace", fontSize: 10, background: "var(--bg-main)", padding: "1px 4px", borderRadius: 3, color: "var(--text-dim)" }}>{e.code}</span></td>
-                    <td style={{ padding: "6px 6px" }}>
-                      {selS.type === "fixed" && e.w != null
-                        ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ flex: 1, height: 5, background: "var(--bg-main)", borderRadius: 3, overflow: "hidden", minWidth: 40 }}><div style={{ height: "100%", width: `${e.w}%`, background: ASSET_COLORS[e.cls] || "#888", borderRadius: 3 }} /></div><span style={{ fontSize: 11, fontWeight: 600, minWidth: 26, textAlign: "right" }}>{e.w}%</span></div>
-                        : <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{e.note || "-"}</span>}
+                    <td style={{ padding: "8px 6px" }}><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-main)" }}>{c.cls}</div></td>
+                    <td style={{ padding: "8px 6px" }}>
+                      {selS.type === "fixed" && c.w != null
+                        ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ flex: 1, height: 5, background: "var(--bg-main)", borderRadius: 3, overflow: "hidden", minWidth: 40 }}><div style={{ height: "100%", width: `${c.w}%`, background: ASSET_COLORS[c.cls] || "#888", borderRadius: 3 }} /></div><span style={{ fontSize: 11, fontWeight: 600, minWidth: 26, textAlign: "right" }}>{c.w}%</span></div>
+                        : <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{c.note || "자동 계산"}</span>}
                     </td>
-                    <td style={{ padding: "6px 6px" }}><span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, fontWeight: 600, background: e.risk ? "#fcebeb" : "#eaf3de", color: e.risk ? "#791f1f" : "#27500a" }}>{e.risk ? "위험" : "안전"}</span></td>
+                    <td style={{ padding: "8px 6px" }}><span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, fontWeight: 600, background: c.risk ? "#fcebeb" : "#eaf3de", color: c.risk ? "#791f1f" : "#27500a" }}>{c.risk ? "위험" : "안전"}</span></td>
                   </tr>
                 ))}</tbody>
               </table>
             </div>
             <div>
-              <ST>{selS.type === "fixed" ? "자산군별 배분" : "자산군 분류"}</ST>
-              {selS.type === "fixed"
-                ? selS.etfs.map((e, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
-                    <div style={{ fontSize: 11, minWidth: 120, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name.replace(" (H)", "").replace("(합성H)", "")}</div>
-                    <div style={{ flex: 1, height: 7, background: "var(--bg-main)", borderRadius: 4, overflow: "hidden", minWidth: 50 }}><div style={{ height: "100%", width: `${e.w}%`, background: ASSET_COLORS[e.cls] || "#888", borderRadius: 4 }} /></div>
-                    <span style={{ fontSize: 12, fontWeight: 500, minWidth: 28, textAlign: "right" }}>{e.w}%</span>
+              <ST>자산 비중 시각화</ST>
+              {selS.composition.map((c, i) => (
+                c.w ? (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, minWidth: 100, color: "var(--text-main)", fontWeight: 500 }}>{c.cls}</div>
+                    <div style={{ flex: 1, height: 8, background: "var(--bg-main)", borderRadius: 4, overflow: "hidden", minWidth: 50 }}><div style={{ height: "100%", width: `${c.w}%`, background: ASSET_COLORS[c.cls] || "#888", borderRadius: 4 }} /></div>
+                    <span style={{ fontSize: 12, fontWeight: 600, minWidth: 35, textAlign: "right" }}>{c.w}%</span>
                   </div>
-                ))
-                : [...new Set(selS.etfs.map(e => e.cls))].map(cls => (
-                  <div key={cls} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 2, background: ASSET_COLORS[cls] || "#888", flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{cls}</span>
-                  </div>
-                ))
-              }
+                ) : null
+              ))}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "1rem", paddingTop: "1rem", borderTop: "0.5px solid var(--border-glass)", flexWrap: "wrap", gap: 10 }}>

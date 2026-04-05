@@ -65,15 +65,16 @@ export function PortfolioProvider({ children }) {
         dynamicTargets = await fetchMomentumTargets(strategyId);
       }
 
-      const tickerTargetMap = {};
+      const assetClassTargetMap = {};
       if (currentStrat) {
-        if (currentStrat.type === "fixed" && currentStrat.etfs) {
-          currentStrat.etfs.forEach(e => {
-            if (e.code) tickerTargetMap[e.code] = e.w || 0;
+        if (currentStrat.type === "fixed" && currentStrat.composition) {
+          currentStrat.composition.forEach(c => {
+            if (c.cls) assetClassTargetMap[c.cls] = c.w || 0;
           });
         } else if (currentStrat.type === "momentum" && dynamicTargets) {
-          // 모멘텀 전략은 자산군 명칭으로 매핑 (KIS 프록시 자산군 기준)
-          // holdings의 asset_class와 dynamicTargets의 key를 매치
+          Object.keys(dynamicTargets).forEach(key => {
+            assetClassTargetMap[key] = dynamicTargets[key] || 0;
+          });
         }
       }
 
@@ -85,12 +86,7 @@ export function PortfolioProvider({ children }) {
       if (sErr) throw sErr;
 
       const mappedHoldings = (holdings || []).map(it => {
-        let target = 0;
-        if (currentStrat?.type === "fixed") {
-          target = tickerTargetMap[it.ticker] || 0;
-        } else if (currentStrat?.type === "momentum") {
-          target = dynamicTargets[it.asset_class] || 0;
-        }
+        const target = assetClassTargetMap[it.asset_class] || 0;
 
         return {
           etf: it.name,
