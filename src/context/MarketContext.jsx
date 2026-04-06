@@ -23,6 +23,14 @@ export function MarketProvider({ children }) {
   const [corrUpdatedAt, setCorrUpdatedAt] = useState(savedCorr.updatedAt);
   const [corrLoading, setCorrLoading] = useState(false);
 
+  // 2단계: 복합 시장 시그널 (Fear & Greed + 수익률 곡선 + 실업률)
+  const savedSignals = JSON.parse(localStorage.getItem('market_signals') || '{}');
+  const [fearGreed, setFearGreed] = useState(savedSignals.fearGreed || null);
+  const [yieldSpread, setYieldSpread] = useState(savedSignals.yieldSpread || null);
+  const [unemployment, setUnemployment] = useState(savedSignals.unemployment || null);
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [signalsError, setSignalsError] = useState(null);
+
 
   const fetchVix = async () => {
     setVixLoading(true);
@@ -60,6 +68,35 @@ export function MarketProvider({ children }) {
       setVixError(e.message);
     }
     setVixLoading(false);
+  };
+
+  // 복합 시장 시그널 조회 (Fear & Greed + 수익률곡선 + 실업률)
+  const fetchMarketSignals = async () => {
+    setSignalsLoading(true);
+    setSignalsError(null);
+    try {
+      const res = await fetch('/api/market-signals');
+      if (!res.ok) throw new Error(`시장 시그널 조회 실패 (Status: ${res.status})`);
+      const data = await res.json();
+
+      const newSignals = {
+        fearGreed: data.fearGreed?.score != null ? data.fearGreed : null,
+        yieldSpread: data.yieldCurve?.spread != null ? data.yieldCurve : null,
+        unemployment: data.unemployment?.rate != null ? data.unemployment : null,
+        compositeScore: data.compositeScore,
+        fetchedAt: data.fetchedAt,
+      };
+
+      setFearGreed(newSignals.fearGreed);
+      setYieldSpread(newSignals.yieldSpread);
+      setUnemployment(newSignals.unemployment);
+      localStorage.setItem('market_signals', JSON.stringify(newSignals));
+    } catch (e) {
+      console.warn('시장 시그널 조회 실패:', e.message);
+      setSignalsError(e.message);
+    } finally {
+      setSignalsLoading(false);
+    }
   };
 
   const loadTickerMaster = async () => {
@@ -146,13 +183,17 @@ export function MarketProvider({ children }) {
   useEffect(() => {
     fetchVix();
     loadTickerMaster();
+    fetchMarketSignals();
   }, []);
 
   return (
     <MarketContext.Provider value={{ 
       vix, vixSource, vixUpdatedAt, vixLoading, vixError, 
       fetchVix, krEtfs, tickerMap, masterError,
-      avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation
+      avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation,
+      // 2단계: 복합 시장 시그널
+      fearGreed, yieldSpread, unemployment,
+      signalsLoading, signalsError, fetchMarketSignals
     }}>
       {children}
     </MarketContext.Provider>

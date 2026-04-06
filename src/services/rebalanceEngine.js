@@ -60,8 +60,54 @@ export function aggregateByAssetClass(holdings, total) {
 }
 
 // =============================================================================
-// IRP 위험자산 비율 체크
+// 복합 시그널 기반 분할 매수 (VIX + Fear & Greed + 수익률 곡선)
 // =============================================================================
+
+/**
+ * 3가지 독립 시그널을 합산하여 분할 매수 횟수를 결정합니다.
+ * 
+ * 왜 복합 시그널인가:
+ *   VIX 단일 지표만으로는 시장 상태를 충분히 파악할 수 없습니다.
+ *   - VIX: 옵션 시장의 변동성 기대치 (공포 강도)
+ *   - Fear & Greed: 7개 지표 복합 센티먼트 (투자 심리)
+ *   - 수익률 곡선: 경기 사이클 위치 (거시 경제)
+ *   → 서로 다른 차원의 정보를 결합하여 더 정교한 판단이 가능합니다.
+ * 
+ * @param {number} vix - CBOE VIX 지수
+ * @param {number|null} fearGreed - CNN Fear & Greed Index (0~100)
+ * @param {number|null} yieldSpread - 10Y-2Y 국채 스프레드 (%)
+ * @returns {number} 분할 매수 횟수 (1~7)
+ */
+export function calculateCompositeSplit(vix, fearGreed = null, yieldSpread = null) {
+  let score = 0;
+
+  // 1. VIX (0~3점) — 시장 변동성
+  if (vix > 35) score += 3;
+  else if (vix > 25) score += 2;
+  else if (vix > 20) score += 1;
+
+  // 2. Fear & Greed (0~3점) — 투자 심리 (역발상)
+  if (fearGreed !== null) {
+    if (fearGreed <= 20) score += 3;       // Extreme Fear → 적극 분할
+    else if (fearGreed <= 40) score += 2;  // Fear
+    else if (fearGreed <= 55) score += 1;  // Neutral
+    // Greed~Extreme Greed → 가산점 없음 (일괄 매수 또는 매수 보류)
+  }
+
+  // 3. 수익률 곡선 (0~2점) — 거시 경제
+  if (yieldSpread !== null) {
+    if (yieldSpread < 0) score += 2;       // 역전 → 경기침체 대비
+    else if (yieldSpread < 0.5) score += 1; // 평탄화 → 주의
+  }
+
+  // 복합 점수 → 분할 매수 횟수
+  // 점수가 높을수록 시장 불확실성이 크므로 더 많이 분할
+  if (score >= 7) return 7;
+  if (score >= 5) return 5;
+  if (score >= 3) return 3;
+  if (score >= 2) return 2;
+  return 1;
+}
 
 const RISK_ASSET_CLASSES = ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"];
 
@@ -111,6 +157,8 @@ export function checkRebalanceTiming(lastRebalDate, rebalPeriod) {
  * @param {Array} assetClassResults - aggregateByAssetClass 결과
  * @param {Object} params
  * @param {number} params.vix - 현재 VIX
+ * @param {number|null} params.fearGreed - Fear & Greed Index (0~100, null이면 미사용)
+ * @param {number|null} params.yieldSpread - 10Y-2Y 스프레드 (%, null이면 미사용)
  * @param {number} params.stopLoss - 손절 기준 (%)
  * @param {number} params.mdd - 현재 MDD (%)
  * @param {number} params.mddLimit - MDD 제한선 (%)
@@ -118,10 +166,10 @@ export function checkRebalanceTiming(lastRebalDate, rebalPeriod) {
  * @param {number} params.irpRiskRatio - IRP 위험자산 비율
  * @returns {ActionTicket[]}
  */
-export function generateActionTickets(assetClassResults, { vix, stopLoss, mdd, mddLimit, accountType, irpRiskRatio }) {
+export function generateActionTickets(assetClassResults, { vix, fearGreed, yieldSpread, stopLoss, mdd, mddLimit, accountType, irpRiskRatio }) {
   const zone = ZONES.find(z => vix < z.max) || ZONES[3];
-  // VIX 기반 분할 매수 횟수 결정
-  const splitCount = vix > 35 ? 5 : vix > 25 ? 3 : 1;
+  // 복합 시그널 기반 분할 매수 횟수 결정
+  const splitCount = calculateCompositeSplit(vix, fearGreed, yieldSpread);
   
   const tickets = [];
   let priority = 1;
