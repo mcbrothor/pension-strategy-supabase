@@ -9,7 +9,6 @@ import { usePortfolio } from "./context/PortfolioContext.jsx";
 import { Badge, Btn } from "./components/common/index.jsx";
 import ConfirmModal from "./components/common/ConfirmModal.jsx";
 import KPIStrip from "./components/common/KPIStrip.jsx";
-import DensityToggle from "./components/common/DensityToggle.jsx";
 
 // Feature Panels (워크플로우형 IA)
 import DailyCheckPanel from "./components/panels/DailyCheckPanel.jsx";
@@ -20,7 +19,7 @@ import MonthlyReport from "./components/panels/MonthlyReport.jsx";
 import SettingsPanel from "./components/panels/SettingsPanel.jsx";
 
 // Services
-import { estimateRiskMetrics } from "./services/riskEngine.js";
+import { estimateRiskMetrics, estimateSortino, estimateCVaR } from "./services/riskEngine.js";
 import { RISK_DATA } from "./constants/index.js";
 import { getStrat } from "./utils/helpers.js";
 
@@ -40,7 +39,6 @@ const TABS = [
 export default function PensionPilot() {
   // 기본 진입: 일일점검
   const [tab, setTab] = useState("daily");
-  const [density, setDensity] = useState("standard");
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   // Contexts
@@ -56,6 +54,11 @@ export default function PensionPilot() {
   const s = getStrat(portfolio.strategy);
   const annualExpRet = s?.annualRet?.base || 0.08;
   const riskMetrics = estimateRiskMetrics(portfolio.holdings, RISK_DATA, annualExpRet);
+  const sortinoResult = estimateSortino(annualExpRet, riskMetrics.vol);
+  const cvarResult = estimateCVaR(riskMetrics.vol);
+  // 칼마: 수익률 / |MDD| (고통 대비 얼마나 벌었나)
+  const mddVal = portfolio.mdd || 0;
+  const calmar = mddVal !== 0 ? (annualExpRet * 100) / Math.abs(mddVal) : 0;
 
   // 전략 변경 핸들러
   const handleSelectStrategy = (id) => {
@@ -68,7 +71,7 @@ export default function PensionPilot() {
   };
 
   return (
-    <div style={{ fontFamily: "var(--font-sans)", color: "var(--text-main)" }} className={density === "compact" ? "compact-mode" : ""}>
+    <div style={{ fontFamily: "var(--font-sans)", color: "var(--text-main)" }} className="compact-mode">
       {/* ===== 앱 헤더 ===== */}
       <div style={{ background: "var(--bg-card)", borderBottom: "0.5px solid var(--border-glass)", padding: "1rem 1.25rem", marginBottom: 0 }}>
         <div style={{ maxWidth: 940, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
@@ -87,7 +90,6 @@ export default function PensionPilot() {
               VIX {vixLoading ? "…" : (vixError ? "Err" : (vix?.toFixed(1) || "…"))}
               {vixUpdatedAt && !vixError && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>({vixSource})</span>}
             </Badge>
-            <DensityToggle density={density} onChange={setDensity} />
             <Btn sm onClick={() => setTab("settings")}>{user ? "설정" : "로그인"}</Btn>
           </div>
         </div>
@@ -103,6 +105,10 @@ export default function PensionPilot() {
           avgCorrelation={avgCorrelation}
           vol={riskMetrics.vol}
           sharpe={riskMetrics.sharpe}
+          sortino={sortinoResult.sortino}
+          cvar={cvarResult.cvar}
+          mdd={mddVal}
+          calmar={calmar}
           dataGrade={vixError ? 'C' : vixSource === 'KIS' ? 'A' : 'B'}
         />
       </div>
