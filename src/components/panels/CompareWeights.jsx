@@ -7,7 +7,8 @@ export default function CompareWeights({ portfolio }) {
   const [benchKey, setBenchKey] = useState(portfolio.strategy || "allseason");
   const total = portfolio.total || 0;
   const bench = STRATEGIES.find(s => s.id === benchKey) || STRATEGIES[3];
-  const benchMap = Object.fromEntries((bench.etfs || []).filter(e => e.w != null).map(e => [e.cls, e.w]));
+  // 버그 수정: etfs → composition (실제 전략 데이터 필드명)
+  const benchMap = Object.fromEntries((bench.composition || []).filter(e => e.w != null && e.w > 0).map(e => [e.cls, e.w]));
 
   const holdings = portfolio.holdings.map(h => {
     const cur = total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0;
@@ -29,7 +30,7 @@ export default function CompareWeights({ portfolio }) {
           <ST>벤치마크 전략 선택</ST>
           <select value={benchKey} onChange={e => setBenchKey(e.target.value)}
             style={{ padding: "6px 10px", border: "0.5px solid var(--border-glass)", borderRadius: "var(--radius-md)", fontSize: 12, background: "var(--bg-card)", color: "var(--text-main)", fontFamily: "var(--font-sans)" }}>
-            {STRATEGIES.filter(s => s.type === "fixed").map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {STRATEGIES.map(s => <option key={s.id} value={s.id}>{s.name} ({s.type === 'fixed' ? '고정' : '모멘텀'})</option>)}
           </select>
         </div>
         <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-dim)", marginBottom: "1rem" }}>
