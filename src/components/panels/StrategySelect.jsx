@@ -70,7 +70,7 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
         <Card>
           <div style={{ display: "flex", gap: 7, marginBottom: 8, flexWrap: "wrap" }}>
             <Badge c={selS.type === "fixed" ? "#27500a" : "#633806"} bg={selS.type === "fixed" ? "#eaf3de" : "#faeeda"}>
-              {selS.type === "fixed" ? "고정비중 — 즉시 실행 가능" : "모멘텀 — 매월 자동 계산"}
+              {selS.type === "fixed" ? "고정비중 — 즉시 실행 가능" : "모멘텀 — 전략 적용 시 자동 계산"}
             </Badge>
           </div>
           <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 5 }}>{selS.name}</div>
@@ -95,13 +95,13 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
                 <div style={{ background: "var(--bg-main)", border: "1.5px solid #ba7517", borderRadius: 10, padding: "1rem", marginBottom: "1.25rem", position: "relative" }}>
                   <div style={{ position: "absolute", top: -10, right: 10, background: "#ba7517", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>AI MOMENTUM ENGINE</div>
                   <div style={{ fontWeight: 600, marginBottom: 8, color: "#633806", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span>⚙️</span> 매월 실시간 모멘텀 계산식
+                    <span>⚙️</span> 조회 시점 모멘텀 계산식
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.8, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", background: "var(--bg-card)", padding: 10, borderRadius: 6 }}>
                     {selS.calc}
                   </div>
                   <div style={{ marginTop: 12, fontSize: 11, color: "#ba7517", fontWeight: 500 }}>
-                    * 이 전략은 매월 말 시장 상황에 따라 구성 종목과 비중이 동적으로 변합니다.
+                    * 이 전략은 전략 적용 및 페이지 로드 시점의 시장 데이터를 기반으로 비중이 결정됩니다.
                   </div>
                 </div>
               )}
@@ -140,7 +140,7 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "1rem", paddingTop: "1rem", borderTop: "0.5px solid var(--border-glass)", flexWrap: "wrap", gap: 10 }}>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{selS.type === "fixed" ? `DB에 전략(${selS.id})이 직접 적용됩니다. · 리밸런싱: ${selS.rebal}` : `모멘텀 가중치가 실시간으로 자동 계산됩니다. · 리밸런싱: ${selS.rebal}`}</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{selS.type === "fixed" ? `DB에 전략(${selS.id})이 직접 적용됩니다. · 리밸런싱: ${selS.rebal}` : `모멘텀 가중치는 전략 적용 및 페이지 로드 시 자동 계산됩니다. · 리밸런싱: ${selS.rebal}`}</div>
             <Btn primary={selS.type === "fixed"} style={selS.type !== "fixed" ? { background: "#ba7517", color: "#fff", borderColor: "transparent" } : {}} onClick={() => onStrategyApply && onStrategyApply(selS.id)}>
               {selS.type === "fixed" ? "이 전략 적용하기" : "모멘텀 자동 계산 적용"}
             </Btn>

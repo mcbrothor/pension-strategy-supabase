@@ -8,29 +8,39 @@ import { usePortfolio } from "./context/PortfolioContext.jsx";
 // Common Components
 import { Badge, Btn } from "./components/common/index.jsx";
 import ConfirmModal from "./components/common/ConfirmModal.jsx";
-import AuthSetup from "./components/common/AuthSetup.jsx";
+import KPIStrip from "./components/common/KPIStrip.jsx";
+import DensityToggle from "./components/common/DensityToggle.jsx";
 
-// Feature Panels
-import Dashboard from "./components/panels/Dashboard";
-import StrategySelect from "./components/panels/StrategySelect";
-import RebalanceJudge from "./components/panels/RebalanceJudge";
-import RetirementRoadmap from "./components/panels/RetirementRoadmap";
-import EntryPanel from "./components/panels/EntryPanel";
-import CompareWeights from "./components/panels/CompareWeights";
-import AlertsPanel from "./components/panels/AlertsPanel";
-import HistoryPanel from "./components/panels/HistoryPanel";
-import MonthlyReport from "./components/panels/MonthlyReport";
+// Feature Panels (워크플로우형 IA)
+import DailyCheckPanel from "./components/panels/DailyCheckPanel.jsx";
+import RiskPanel from "./components/panels/RiskPanel.jsx";
+import OrderPlanPanel from "./components/panels/OrderPlanPanel.jsx";
+import ValidationPanel from "./components/panels/ValidationPanel.jsx";
+import MonthlyReport from "./components/panels/MonthlyReport.jsx";
+import SettingsPanel from "./components/panels/SettingsPanel.jsx";
 
+// Services
+import { estimateRiskMetrics } from "./services/riskEngine.js";
+import { RISK_DATA } from "./constants/index.js";
+import { getStrat } from "./utils/helpers.js";
+
+/**
+ * 워크플로우형 탭 구조 (6탭)
+ * 순서: 일일점검 → 리스크 → 주문계획 → 전략검증 → 리포트 → 설정
+ */
 const TABS = [
-  { id: "dashboard", label: "대시보드" },
-  { id: "assets", label: "자산 관리" },
-  { id: "strategy", label: "투자 전략" },
-  { id: "roadmap", label: "은퇴 로드맵" },
-  { id: "account", label: "계정 관리" },
+  { id: "daily",      label: "일일점검",   icon: "📋", num: 1 },
+  { id: "risk",       label: "리스크",     icon: "📈", num: 2 },
+  { id: "orders",     label: "주문계획",   icon: "📝", num: 3 },
+  { id: "validation", label: "전략검증",   icon: "🔬", num: 4 },
+  { id: "report",     label: "리포트",     icon: "📄", num: 5 },
+  { id: "settings",   label: "설정",       icon: "⚙️", num: 6 },
 ];
 
 export default function PensionPilot() {
-  const [tab, setTab] = useState("dashboard");
+  // 기본 진입: 일일점검
+  const [tab, setTab] = useState("daily");
+  const [density, setDensity] = useState("standard");
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   // Contexts
@@ -40,8 +50,14 @@ export default function PensionPilot() {
     avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation
   } = useMarket();
 
-  const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings } = usePortfolio();
+  const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings, degradedMode, targetSource } = usePortfolio();
 
+  // 리스크 지표 (KPI 스트립용)
+  const s = getStrat(portfolio.strategy);
+  const annualExpRet = s?.annualRet?.base || 0.08;
+  const riskMetrics = estimateRiskMetrics(portfolio.holdings, RISK_DATA, annualExpRet);
+
+  // 전략 변경 핸들러
   const handleSelectStrategy = (id) => {
     setModal({
       isOpen: true,
@@ -52,16 +68,17 @@ export default function PensionPilot() {
   };
 
   return (
-    <div style={{ fontFamily: "var(--font-sans)", color: "var(--text-main)" }}>
-      {/* 앱 헤더 */}
-      <div style={{ background: "var(--bg-card)", borderBottom: "0.5px solid var(--border-glass)", padding: "1rem 1.25rem", marginBottom: "1.25rem" }}>
+    <div style={{ fontFamily: "var(--font-sans)", color: "var(--text-main)" }} className={density === "compact" ? "compact-mode" : ""}>
+      {/* ===== 앱 헤더 ===== */}
+      <div style={{ background: "var(--bg-card)", borderBottom: "0.5px solid var(--border-glass)", padding: "1rem 1.25rem", marginBottom: 0 }}>
         <div style={{ maxWidth: 940, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 500, marginBottom: 2 }}>연금 포트폴리오 파일럿</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>삼성증권 IRP/연금저축 · Supabase 클라우드 DB · 은퇴 목표 관리</div>
+            <div style={{ fontSize: 17, fontWeight: 500, marginBottom: 2 }}>연금 운용 데스크</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>삼성증권 IRP/연금저축 · 실무형 운용 관리 시스템</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {isDemo && <Badge c="#633806" bg="#faeeda">데모 모드</Badge>}
+            {degradedMode && <Badge c="var(--alert-warn-color)" bg="var(--alert-warn-bg)">⚡ 폴백</Badge>}
             <Badge 
               c={vixLoading ? "var(--text-dim)" : (vixError ? "#a32d2d" : (vixSource === "KIS" ? "#1a73e8" : "#27500a"))} 
               bg={vixLoading ? "var(--bg-main)" : (vixError ? "#fcebeb" : (vixSource === "KIS" ? "#eef6ff" : "#eaf3de"))}
@@ -70,72 +87,96 @@ export default function PensionPilot() {
               VIX {vixLoading ? "…" : (vixError ? "Err" : (vix?.toFixed(1) || "…"))}
               {vixUpdatedAt && !vixError && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>({vixSource})</span>}
             </Badge>
-            <Btn sm onClick={() => setTab("account")}>{user ? "계정 관리" : "로그인"}</Btn>
-            <Btn sm onClick={() => setModal({
-              isOpen: true,
-              title: "월간 리포트 생성",
-              message: "현재 상태를 바탕으로 월간 분석 리포트를 확인하시겠습니까?",
-              onConfirm: () => setTab("report_view")
-            })} style={{ background: "var(--color-primary)", color: "#fff", border: "none" }}>리포트 PDF</Btn>
+            <DensityToggle density={density} onChange={setDensity} />
+            <Btn sm onClick={() => setTab("settings")}>{user ? "설정" : "로그인"}</Btn>
           </div>
         </div>
       </div>
 
+      {/* ===== KPI 스트립 (전 탭 공통) ===== */}
       <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 1rem" }}>
-        {/* 탭 */}
-        {tab !== "report_view" && (
-          <div className="no-scrollbar" style={{ display: "flex", gap: 2, borderBottom: "0.5px solid var(--border-glass)", marginBottom: "1.5rem", overflowX: "auto" }}>
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "8px 15px", fontSize: 13, border: "none", background: "none", cursor: "pointer", color: tab === t.id ? "var(--text-main)" : "var(--text-dim)", borderBottom: `2px solid ${tab === t.id ? "var(--text-main)" : "transparent"}`, fontWeight: tab === t.id ? 500 : 400, fontFamily: "var(--font-sans)", marginBottom: -1, whiteSpace: "nowrap" }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+        <KPIStrip
+          total={portfolio.total}
+          totalDiff={null}
+          vix={vix}
+          vixMeta={vixUpdatedAt ? { freshness: (() => { const age = (Date.now() - new Date(vixUpdatedAt).getTime()) / 60000; return age <= 5 ? 'realtime' : age <= 60 ? 'delayed' : 'cached'; })() } : null}
+          avgCorrelation={avgCorrelation}
+          vol={riskMetrics.vol}
+          sharpe={riskMetrics.sharpe}
+          dataGrade={vixError ? 'C' : vixSource === 'KIS' ? 'A' : 'B'}
+        />
+      </div>
+
+      <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 1rem" }}>
+        {/* ===== 워크플로우 탭 ===== */}
+        <div className="workflow-tabs">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`workflow-tab ${tab === t.id ? 'active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="tab-number">{t.num}</span>
+              <span>{t.icon} {t.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ===== 패널 렌더링 ===== */}
+        {tab === "daily" && (
+          <DailyCheckPanel
+            portfolio={portfolio}
+            vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixLoading={vixLoading} vixError={vixError}
+            masterError={masterError} onFetchVix={fetchVix} onGo={setTab}
+            avgCorrelation={avgCorrelation} corrUpdatedAt={corrUpdatedAt} corrLoading={corrLoading} onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
+            degradedMode={degradedMode} targetSource={targetSource}
+          />
         )}
 
-        {/* 패널 */}
-        {tab === "dashboard" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <Dashboard 
-              portfolio={portfolio} 
-              vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixLoading={vixLoading} vixError={vixError} 
-              masterError={masterError} onFetchVix={fetchVix} onGo={setTab}
-              avgCorrelation={avgCorrelation} corrUpdatedAt={corrUpdatedAt} corrLoading={corrLoading} onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
-            />
+        {tab === "risk" && (
+          <RiskPanel portfolio={portfolio} />
+        )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1.5rem" }}>
-              <HistoryPanel portfolio={portfolio} />
-              <RebalanceJudge 
-                portfolio={portfolio} 
-                vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} 
-                avgCorrelation={avgCorrelation}
-              />
+        {tab === "orders" && (
+          <OrderPlanPanel
+            portfolio={portfolio}
+            vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt}
+            avgCorrelation={avgCorrelation}
+          />
+        )}
 
-            </div>
-          </div>
+        {tab === "validation" && (
+          <ValidationPanel
+            portfolio={portfolio}
+            accountType={portfolio.accountType}
+            onStrategyApply={handleSelectStrategy}
+          />
         )}
-        {tab === "strategy" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <StrategySelect accountType={portfolio.accountType} onStrategyApply={handleSelectStrategy} />
-            <AlertsPanel portfolio={portfolio} onStopLossChange={v => setPortfolio(p => ({ ...p, stopLoss: v }))} onMddChange={v => setPortfolio(p => ({ ...p, mddLimit: v }))} />
-          </div>
+
+        {tab === "report" && (
+          <MonthlyReport
+            portfolio={portfolio}
+            vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixError={vixError}
+          />
         )}
-        {tab === "assets" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <EntryPanel portfolio={portfolio} onSave={saveHoldings} krEtfs={krEtfs} tickerMap={tickerMap} masterError={masterError} />
-            <CompareWeights portfolio={portfolio} />
-          </div>
-        )}
-        {tab === "roadmap" && <RetirementRoadmap strategyId={portfolio.strategy} />}
-        {tab === "account" && <AuthSetup user={user} onLogin={login} onSignUp={signUp} onLogout={logout} isSaving={isSaving} />}
-        
-        {tab === "report_view" && (
-          <div>
-            <Btn onClick={() => setTab("dashboard")} style={{ marginBottom: "1rem" }}>← 대시보드로 돌아가기</Btn>
-            <MonthlyReport portfolio={portfolio} vix={vix} vixSource={vixSource} vixUpdatedAt={vixUpdatedAt} vixError={vixError} />
-          </div>
+
+        {tab === "settings" && (
+          <SettingsPanel
+            portfolio={portfolio}
+            setPortfolio={setPortfolio}
+            saveHoldings={saveHoldings}
+            krEtfs={krEtfs}
+            tickerMap={tickerMap}
+            masterError={masterError}
+            user={user}
+            login={login}
+            signUp={signUp}
+            logout={logout}
+            isSaving={isSaving}
+          />
         )}
       </div>
+
       <ConfirmModal {...modal} onClose={() => setModal(m => ({ ...m, isOpen: false }))} />
     </div>
   );

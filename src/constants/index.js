@@ -56,7 +56,7 @@ export const STRATEGIES = [
   { id:"laa", type:"momentum", level:"고급", name:"LAA (게으른 자산배분)", ret:"약 10%", mdd:"약 13%", rebal:"월 1회", irpRisk:75,
     annualRet:{cons:0.065,base:0.090,opt:0.115},
     desc:"75%를 고정 보유하고 25%만 모멘텀 운용하는 하이브리드 전략. 거래 빈도가 낮아 세금 효율이 높습니다.",
-    calc:"매월 말 (25% 분량): 미국주식 < 200일 이평 AND 실업률 > 12M 이평\n→ 공격자산 전환 / 미충족 → 공격자산(나스닥) 유지",
+    calc:"전략 적용 시점: 미국주식 12개월 수익률 ≥ 0% → 공격자산(미국주식) 25% 유지\n수익률 < 0% → 방어자산(현금MMF)으로 전환",
     composition:[
       {cls:"국내주식",w:25,role:"fixed",risk:true},
       {cls:"금",w:25,role:"fixed",risk:true},
