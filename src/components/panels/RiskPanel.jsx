@@ -1,9 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, ST, Badge, MetaCard } from "../common/index.jsx";
 import { fmtP } from "../../utils/formatters.js";
 import { getStrat } from "../../utils/helpers.js";
 import { RISK_DATA, ASSET_COLORS } from "../../constants/index.js";
 import { generateRiskReport } from "../../services/riskEngine.js";
+
+// Recharts for MDD chart
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
+} from "recharts";
 
 /**
  * 리스크 패널 — 전문 리스크 지표 화면
@@ -11,16 +16,60 @@ import { generateRiskReport } from "../../services/riskEngine.js";
  */
 export default function RiskPanel({ portfolio }) {
   const [period, setPeriod] = useState("1Y"); // '1Y' | '3Y' | 'all'
+  const [historicalData, setHistoricalData] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
   const holdings = portfolio.holdings.map(h => {
-    const cur = total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0;
+    const cur = total > 0 ? Math.round((h.amt || 0) / total * 1000) / 10 : 0;
     return { ...h, cur };
   });
 
+  useEffect(() => {
+    if (!holdings || holdings.length === 0) return;
+    let isMounted = true;
+    
+    const fetchHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const promises = holdings.map(async h => {
+           const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
+           // type 파라미터는 kis-history를 위해 사용
+           const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
+           if (!res.ok) return null;
+           const json = await res.json();
+           return json;
+        });
+        const results = await Promise.all(promises);
+        const validData = results.filter(d => d && d.prices && d.prices.length > 5);
+        if (isMounted) setHistoricalData(validData);
+      } catch (e) {
+        console.error("리스크 패널 히스토리 로드 실패:", e.message);
+      } finally {
+        if (isMounted) setLoadingHistory(false);
+      }
+    };
+    
+    fetchHistory();
+    return () => { isMounted = false; };
+  }, [portfolio.strategy, holdings.length]);
+
   const annualExpRet = s?.annualRet?.base || 0.08;
-  const report = generateRiskReport(holdings, annualExpRet, period);
+  const report = generateRiskReport(holdings, annualExpRet, period, historicalData);
+
+  // MDD 차트를 위한 데이터 가공 (누적 수익률 및 낙폭)
+  const chartData = [];
+  if (report.calcMode === 'realized' && report.dailyReturns && report.dailyReturns.length > 0) {
+    let peak = 1;
+    let cum = 1;
+    report.dailyReturns.forEach((ret, i) => {
+      cum = cum * (1 + ret);
+      if (cum > peak) peak = cum;
+      const drawdown = ((cum - peak) / peak) * 100;
+      chartData.push({ day: i + 1, drawdown });
+    });
+  }
 
   return (
     <div>
@@ -42,7 +91,7 @@ export default function RiskPanel({ portfolio }) {
       </div>
 
       {/* 핵심 지표 카드 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: "1rem" }}>
         <MetaCard
           label="기대 변동성(σ)"
           value={fmtP(report.metrics.vol)}
@@ -62,12 +111,43 @@ export default function RiskPanel({ portfolio }) {
           subColor={report.metrics.sortino > 0.5 ? "var(--alert-ok-color)" : "var(--alert-warn-color)"}
         />
         <MetaCard
+          label="MDD"
+          value={`-${report.metrics.mdd ? report.metrics.mdd.toFixed(1) : 0}%`}
+          sub="최대 낙폭"
+          subColor={report.metrics.mdd > 15 ? "var(--alert-danger-color)" : "var(--text-dim)"}
+        />
+        <MetaCard
           label="CVaR(95%)"
           value={`-${report.metrics.cvar.toFixed(1)}%`}
-          sub="최대 예상 손실"
+          sub="최대 예상 일간손실(연율화)"
           subColor="var(--alert-danger-color)"
         />
       </div>
+
+      {loadingHistory && <div style={{ fontSize: 12, padding: 10, color: "var(--text-dim)" }}>실시간 가격 데이터를 수집중입니다...</div>}
+
+      {/* MDD 차트 (실현 데이터가 있을 경우) */}
+      {!loadingHistory && chartData.length > 0 && (
+        <Card>
+          <ST>최근 MDD 트렌드 (Drawdown)</ST>
+          <div style={{ width: "100%", height: 200, marginTop: 10 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="day" stroke="#ffffff40" fontSize={10} tickFormatter={v => `${v}일`} />
+                <YAxis stroke="#ffffff40" fontSize={10} tickFormatter={v => `${v.toFixed(0)}%`} domain={['dataMin - 2', 0]} />
+                <Tooltip 
+                  formatter={(v) => [`${v.toFixed(1)}%`, 'Drawdown']} 
+                  labelFormatter={(v) => `최근 ${chartData.length - v}일 전`}
+                  contentStyle={{ backgroundColor: "#1e1e1e", border: "none", borderRadius: 8 }}
+                />
+                <ReferenceLine y={0} stroke="#ffffff40" />
+                <Line type="monotone" dataKey="drawdown" stroke="var(--alert-danger-color)" strokeWidth={2} dot={false} fill="var(--alert-danger-color)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
 
       {/* 경고 메시지 */}
       {report.warnings.length > 0 && (

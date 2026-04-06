@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Card, ST, Badge, Btn, MetaCard, ReasonBox } from "../common/index.jsx";
+import { Card, ST, Badge, MetaCard, ReasonBox } from "../common/index.jsx";
 import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { aggregateByAssetClass, calculateIRPRiskRatio, checkRebalanceTiming, generateActionTickets, collectReasons } from "../../services/rebalanceEngine.js";
+import { supabase } from "../../lib/supabase.js";
 
 /**
  * 주문계획 패널 — 리밸런싱 판단 + 주문 제안서
@@ -38,6 +39,50 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
   const holdTickets = tickets.filter(t => t.actionType === 'hold');
   const actionTickets = [...sellTickets, ...buyTickets];
   const doneCount = Object.values(checked).filter(Boolean).length;
+
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [saveComplete, setSaveComplete] = useState(false);
+
+  const saveDecisionAndNotify = async () => {
+    setSavingConfig(true);
+    try {
+      // 1. Supabase Audit Log 저장
+      const { error: dbError } = await supabase.from('decision_logs').insert([
+        { 
+          strategy_id: portfolio.strategy,
+          account_type: portfolio.accountType,
+          action_summary: tickets,
+          decision_reasons: reasons,
+          vix_level: vix
+        }
+      ]);
+      if (dbError) throw dbError;
+
+      // 2. 관리자 이메일 발송 (Settings에서 이메일 읽거나 환경변수/하드코딩 사용)
+      const mockAdminEmail = "admin@example.com";
+      const subject = `[연금운용] ${portfolio.accountType} (${s.name}) 리밸런싱 실행 알림`;
+      const body = `
+        <h3>리밸런싱 완료 알림</h3>
+        <p>계좌: ${portfolio.accountType}</p>
+        <p>전략: ${s.name}</p>
+        <p>실행 내역: 매수 ${buyTickets.length}건, 매도 ${sellTickets.length}건</p>
+        <br/><p>결정 근거</p><ul>${reasons.map(r => `<li>${r.title}: ${r.desc}</li>`).join('')}</ul>
+      `;
+
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: mockAdminEmail, subject, body })
+      });
+
+      setSaveComplete(true);
+    } catch (err) {
+      console.error("저장 또는 알림 발송 중 오류:", err);
+      alert("로그 저장에 실패했습니다.");
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   return (
     <div>
@@ -120,6 +165,18 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
               <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
                 다음 리밸런싱 예정일: {new Date(Date.now() + timing.required * 86400000).toLocaleDateString("ko-KR")}
               </div>
+              <button 
+                onClick={saveDecisionAndNotify} 
+                disabled={savingConfig || saveComplete}
+                style={{ 
+                  marginTop: 12, padding: "8px 16px", borderRadius: 8, border: "none", 
+                  cursor: savingConfig || saveComplete ? "not-allowed" : "pointer",
+                  background: saveComplete ? "var(--border-glass)" : "var(--primary-color)", 
+                  color: "#fff", fontWeight: 600 
+                }}
+              >
+                {saveComplete ? "로그 저장 및 알림 발송 완료" : savingConfig ? "저장 중..." : "결정 로그 저장하기 & 메일 알림"}
+              </button>
             </div>
           )}
         </Card>
