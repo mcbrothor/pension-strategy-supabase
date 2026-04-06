@@ -12,6 +12,7 @@ import { getFreshnessLabel } from "../../services/marketData.js";
 export default function KPIStrip({
   total, totalDiff, vix, vixMeta, avgCorrelation,
   vol, sharpe, sortino, cvar, mdd, calmar,
+  fearGreedScore, yieldSpreadVal,
   dataGrade
 }) {
   const items = [
@@ -72,6 +73,20 @@ export default function KPIStrip({
       value: avgCorrelation != null ? avgCorrelation.toFixed(2) : "—",
       sub: avgCorrelation > 0.7 ? "⚠ 높음" : avgCorrelation > 0.5 ? "보통" : "양호",
       subColor: avgCorrelation > 0.7 ? "var(--alert-danger-color)" : "var(--alert-ok-color)",
+    },
+    {
+      // Fear & Greed: 투자 심리 복합 지표
+      label: "F&G",
+      value: fearGreedScore != null ? Math.round(fearGreedScore).toString() : "—",
+      sub: fearGreedScore != null ? (fearGreedScore <= 24 ? "극단적 공포" : fearGreedScore <= 44 ? "공포" : fearGreedScore <= 55 ? "중립" : fearGreedScore <= 74 ? "탐욕" : "극단적 탐욕") : null,
+      subColor: fearGreedScore != null ? (fearGreedScore <= 24 ? "var(--alert-danger-color)" : fearGreedScore <= 44 ? "var(--alert-warn-color)" : fearGreedScore <= 74 ? "var(--text-dim)" : "var(--alert-info-color)") : "var(--text-dim)",
+    },
+    {
+      // 수익률 곡선: 경기 사이클 지표
+      label: "10Y-2Y",
+      value: yieldSpreadVal != null ? `${yieldSpreadVal >= 0 ? "+" : ""}${yieldSpreadVal.toFixed(2)}%` : "—",
+      sub: yieldSpreadVal != null ? (yieldSpreadVal < 0 ? "⚠ 역전" : yieldSpreadVal < 0.5 ? "평탄화" : "정상") : null,
+      subColor: yieldSpreadVal != null ? (yieldSpreadVal < 0 ? "var(--alert-danger-color)" : yieldSpreadVal < 0.5 ? "var(--alert-warn-color)" : "var(--alert-ok-color)") : "var(--text-dim)",
     },
     {
       label: "신뢰도",

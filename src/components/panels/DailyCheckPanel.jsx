@@ -5,6 +5,7 @@ import { getZone, getStrat } from "../../utils/helpers.js";
 import { ASSET_COLORS, RISK_DATA } from "../../constants/index.js";
 import { estimateRiskMetrics } from "../../services/riskEngine.js";
 import { aggregateByAssetClass, calculateIRPRiskRatio, checkRebalanceTiming, generateActionTickets, collectReasons } from "../../services/rebalanceEngine.js";
+import { calculateCompositeSplit } from "../../services/rebalanceEngine.js";
 
 /**
  * 일일점검 패널 — 기본 진입 화면
@@ -14,7 +15,9 @@ export default function DailyCheckPanel({
   portfolio, vix, vixSource, vixUpdatedAt, vixLoading, vixError,
   masterError, onFetchVix, onGo,
   avgCorrelation, corrUpdatedAt, corrLoading, onRefreshCorr,
-  degradedMode, targetSource
+  degradedMode, targetSource,
+  // 2단계: 복합 시장 시그널
+  fearGreed, yieldSpread, unemployment, signalsLoading, onRefreshSignals
 }) {
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
@@ -34,11 +37,15 @@ export default function DailyCheckPanel({
   const assetClassResults = aggregateByAssetClass(holdings, total);
   const irpRiskRatio = calculateIRPRiskRatio(assetClassResults);
 
-  // ActionTicket 생성
+  // ActionTicket 생성 — 복합 시그널 전달
+  const fgScore = fearGreed?.score ?? null;
+  const ysSpread = yieldSpread?.spread ?? null;
   const tickets = generateActionTickets(assetClassResults, {
-    vix, stopLoss: portfolio.stopLoss, mdd: portfolio.mdd, mddLimit: portfolio.mddLimit,
+    vix, fearGreed: fgScore, yieldSpread: ysSpread,
+    stopLoss: portfolio.stopLoss, mdd: portfolio.mdd, mddLimit: portfolio.mddLimit,
     accountType: portfolio.accountType, irpRiskRatio
   });
+  const compositeSplit = calculateCompositeSplit(vix, fgScore, ysSpread);
 
   const sellTickets = tickets.filter(t => t.actionType === 'sell');
   const buyTickets = tickets.filter(t => t.actionType === 'buy');
@@ -186,6 +193,107 @@ export default function DailyCheckPanel({
           </div>
         </Card>
       </div>
+
+      {/* ===== 시장 센티먼트 대시보드 ===== */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <ST>🌍 시장 센티먼트</ST>
+          <Btn sm onClick={onRefreshSignals} disabled={signalsLoading}>{signalsLoading ? "갱신 중…" : "시그널 갱신"}</Btn>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+          {/* Fear & Greed */}
+          <div style={{ background: "var(--bg-main)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>Fear & Greed (CNN)</div>
+            {fgScore !== null ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: fgScore <= 24 ? "#a32d2d" : fgScore <= 44 ? "#d97706" : fgScore <= 55 ? "var(--text-main)" : fgScore <= 74 ? "#3b6d11" : "#1a73e8" }}>
+                    {fgScore}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-dim)" }}>/100</span>
+                </div>
+                <div style={{
+                  height: 6, borderRadius: 3, marginTop: 6, background: "var(--border-glass)",
+                  position: "relative", overflow: "hidden"
+                }}>
+                  <div style={{
+                    position: "absolute", left: 0, top: 0, height: "100%", borderRadius: 3,
+                    width: `${fgScore}%`,
+                    background: fgScore <= 24 ? "#a32d2d" : fgScore <= 44 ? "#d97706" : fgScore <= 55 ? "#888" : fgScore <= 74 ? "#3b6d11" : "#1a73e8"
+                  }} />
+                </div>
+                <div style={{ fontSize: 10, marginTop: 4, color: fgScore <= 24 ? "#a32d2d" : fgScore <= 44 ? "#d97706" : fgScore <= 55 ? "var(--text-dim)" : "#3b6d11" }}>
+                  {fearGreed?.labelKo || ""}
+                  {fgScore <= 24 && " → 분할 매수 적극화"}
+                  {fgScore >= 75 && " → 매수 보류 검토"}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>조회 대기 중…</div>
+            )}
+          </div>
+
+          {/* 수익률 곡선 */}
+          <div style={{ background: "var(--bg-main)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>수익률 곡선 10Y-2Y (FRED)</div>
+            {ysSpread !== null ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: ysSpread < 0 ? "#a32d2d" : ysSpread < 0.5 ? "#d97706" : "#3b6d11" }}>
+                    {ysSpread >= 0 ? "+" : ""}{ysSpread.toFixed(2)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, marginTop: 4, color: ysSpread < 0 ? "#a32d2d" : ysSpread < 0.5 ? "#d97706" : "var(--text-dim)" }}>
+                  {yieldSpread?.statusKo || ""}
+                  {ysSpread < 0 && " → 경기침체 대비, 분할 극대화"}
+                </div>
+                {yieldSpread?.date && <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>기준일: {yieldSpread.date}</div>}
+              </>
+            ) : (
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>조회 대기 중…</div>
+            )}
+          </div>
+
+          {/* 실업률 */}
+          <div style={{ background: "var(--bg-main)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>미국 실업률 (FRED)</div>
+            {unemployment?.rate != null ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)" }}>
+                    {unemployment.rate}%
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-dim)" }}>12M평균 {unemployment.avg12m}%</span>
+                </div>
+                <div style={{ fontSize: 10, marginTop: 4, color: unemployment.isBelow12mAvg ? "#3b6d11" : "#d97706" }}>
+                  {unemployment.isBelow12mAvg ? "↓ 하향 (경기 호조)" : "↑ 상향 (경기 둔화)"}
+                </div>
+                {unemployment.date && <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>기준월: {unemployment.date}</div>}
+              </>
+            ) : (
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>조회 대기 중…</div>
+            )}
+          </div>
+        </div>
+
+        {/* 복합 판단 요약 */}
+        <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--bg-main)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            복합 시그널 판단: <strong style={{ color: "var(--text-main)" }}>분할 {compositeSplit}회</strong>
+            <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.7 }}>
+              (VIX {vix?.toFixed(1) || "…"}
+              {fgScore !== null && ` + F&G ${fgScore}`}
+              {ysSpread !== null && ` + 수익률곡선 ${ysSpread >= 0 ? "+" : ""}${ysSpread.toFixed(2)}%`})
+            </span>
+          </div>
+          <Badge
+            c={compositeSplit >= 5 ? "var(--alert-danger-color)" : compositeSplit >= 3 ? "var(--alert-warn-color)" : "var(--alert-ok-color)"}
+            bg={compositeSplit >= 5 ? "var(--alert-danger-bg)" : compositeSplit >= 3 ? "var(--alert-warn-bg)" : "var(--alert-ok-bg)"}
+          >
+            {compositeSplit >= 5 ? "고위험" : compositeSplit >= 3 ? "주의" : "정상"}
+          </Badge>
+        </div>
+      </Card>
 
       {/* ===== 네비게이션 ===== */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: "1rem" }}>

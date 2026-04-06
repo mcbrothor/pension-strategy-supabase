@@ -45,7 +45,8 @@ export default function PensionPilot() {
   const { user, login, signUp, logout, loading: authLoading } = useAuth();
   const { 
     vix, vixSource, vixUpdatedAt, vixLoading, vixError, fetchVix, krEtfs, tickerMap, masterError,
-    avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation
+    avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation,
+    fearGreed, yieldSpread, unemployment, signalsLoading, signalsError, fetchMarketSignals
   } = useMarket();
 
   const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings, degradedMode, targetSource } = usePortfolio();
@@ -109,6 +110,8 @@ export default function PensionPilot() {
           cvar={cvarResult.cvar}
           mdd={mddVal}
           calmar={calmar}
+          fearGreedScore={fearGreed?.score ?? null}
+          yieldSpreadVal={yieldSpread?.spread ?? null}
           dataGrade={vixError ? 'C' : vixSource === 'KIS' ? 'A' : 'B'}
         />
       </div>
@@ -136,6 +139,8 @@ export default function PensionPilot() {
             masterError={masterError} onFetchVix={fetchVix} onGo={setTab}
             avgCorrelation={avgCorrelation} corrUpdatedAt={corrUpdatedAt} corrLoading={corrLoading} onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
             degradedMode={degradedMode} targetSource={targetSource}
+            fearGreed={fearGreed} yieldSpread={yieldSpread} unemployment={unemployment}
+            signalsLoading={signalsLoading} onRefreshSignals={fetchMarketSignals}
           />
         )}
 
