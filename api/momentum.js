@@ -103,27 +103,62 @@ async function fetchKISMonthlyCloses(tickerInfo, monthsNeeded) {
 }
 
 /**
- * Yahoo Finance Fallback (v8 chart API)
+ * Yahoo Finance Fallback — 월봉 (기존 전략용)
  */
 async function fetchYahooMonthlyCloses(ticker, monthsNeeded) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1mo&range=2y`;
   try {
-    const res = await fetch(url, {
-       headers: { "User-Agent": "Mozilla/5.0" }
-    });
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1mo&range=2y`;
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     const d = await res.json();
     const result = d?.chart?.result?.[0];
     if (!result) return [];
-    
-    // Yahoo v8은 timestamps와 indicators.adjclose[0].adjclose가 매칭됨
     const adjCloses = result.indicators?.adjclose?.[0]?.adjclose || result.indicators?.quote?.[0]?.close || [];
-    const validCloses = adjCloses.filter(v => v != null);
-    
-    // 가장 최근 데이터부터 monthsNeeded만큼 가져오기
-    return validCloses.slice(-monthsNeeded);
+    return adjCloses.filter(v => v != null).slice(-monthsNeeded);
   } catch (e) {
-    console.error(`Yahoo fetch error for ${ticker}:`, e.message);
+    console.error(`Yahoo monthly fetch error for ${ticker}:`, e.message);
     return [];
+  }
+}
+
+/**
+ * Yahoo Finance 일봉 200일 종가 조회 (LAA 200DMA용)
+ * 왜 Yahoo인가: KIS 일봉 API는 100건/요청 제한이라 200일치 조회에 2회 필요. Yahoo는 1회로 충분.
+ */
+async function fetchYahooDailyCloses(ticker, days = 220) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
+    const d = await res.json();
+    const result = d?.chart?.result?.[0];
+    if (!result) return [];
+    const closes = result.indicators?.adjclose?.[0]?.adjclose || result.indicators?.quote?.[0]?.close || [];
+    return closes.filter(v => v != null).slice(-days);
+  } catch (e) {
+    console.error(`Yahoo daily fetch error for ${ticker}:`, e.message);
+    return [];
+  }
+}
+
+/**
+ * FRED 미국 실업률(UNRATE) 조회 (LAA 듀얼 조건용)
+ */
+async function fetchFREDUnemployment() {
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${apiKey}&file_type=json&sort_order=desc&limit=13`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json();
+    const valid = (data.observations || []).filter(o => o.value !== ".").map(o => parseFloat(o.value));
+    if (valid.length < 2) return null;
+    const current = valid[0];
+    const avg12m = valid.length >= 12
+      ? valid.slice(0, 12).reduce((s, v) => s + v, 0) / 12
+      : current;
+    return { rate: current, avg12m, isBelow: current < avg12m };
+  } catch (e) {
+    console.error("FRED UNRATE fetch error:", e.message);
+    return null;
   }
 }
 
@@ -204,7 +239,18 @@ function computeDualMomentumTargets(priceSeries, composition) {
   return targets;
 }
 
-function computeLAATargets(priceSeries, composition) {
+/**
+ * LAA 전략 타겟 산출 — 2단계 듀얼 조건 확장
+ * 
+ * 원래 LAA 조건 (Keller & Keuning, 2016):
+ *   조건1: 미국주식 현재가 > 200일 이동평균
+ *   조건2: 미국 실업률 < 12개월 평균 실업률
+ *   → 둘 다 충족 → 공격자산 25%
+ *   → 하나라도 미충족 → 방어자산 25%
+ * 
+ * 폴백: 200DMA 또는 실업률 조회 실패 시 기존 12M 모멘텀으로 자동 폴백
+ */
+async function computeLAATargets(priceSeries, composition) {
   const targets = {};
   const fixed = composition.filter(c => c.role === "fixed");
   const attack = composition.find(c => c.role === "attack");
@@ -213,17 +259,60 @@ function computeLAATargets(priceSeries, composition) {
   // 고정 비중 적용 (합계 75%)
   fixed.forEach(c => targets[c.cls] = c.w || 0);
 
-  // 모멘텀 체크 (미국주식 지표 사용)
-  const indicatorCls = "미국주식"; 
-  const ret = retPctFromCloses(priceSeries[indicatorCls]?.monthlyCloses || [], 12);
-
   const momentumWeight = 25;
-  if (ret != null && ret >= 0) {
+  const indicatorCls = "미국주식";
+
+  // --- 듀얼 조건 시도 ---
+  let dualConditionResult = null; // true(공격), false(방어), null(폴백)
+  let conditionSource = "fallback"; // 어떤 조건으로 판단했나
+
+  try {
+    // 조건1: 200DMA — Yahoo Finance 일봉으로 현재가 vs 200일 평균 비교
+    const dailyCloses = await fetchYahooDailyCloses("SPY", 220);
+    
+    // 조건2: 실업률 — FRED UNRATE
+    const unempData = await fetchFREDUnemployment();
+
+    if (dailyCloses.length >= 200 && unempData) {
+      // 둘 다 성공: 듀얼 조건 판단
+      const currentPrice = dailyCloses[dailyCloses.length - 1];
+      const sma200 = dailyCloses.slice(-200).reduce((s, v) => s + v, 0) / 200;
+      const isAbove200DMA = currentPrice > sma200;
+      const isUnempBelow = unempData.isBelow;
+
+      dualConditionResult = isAbove200DMA && isUnempBelow;
+      conditionSource = "dual";
+      console.log(`LAA Dual: Price=${currentPrice.toFixed(2)}, SMA200=${sma200.toFixed(2)}, Above=${isAbove200DMA}, Unemp=${unempData.rate}%, Avg12M=${unempData.avg12m.toFixed(2)}%, Below=${isUnempBelow} → ${dualConditionResult ? "ATTACK" : "DEFENSIVE"}`);
+    } else if (dailyCloses.length >= 200) {
+      // 200DMA만 성공: 200DMA 단독 판단
+      const currentPrice = dailyCloses[dailyCloses.length - 1];
+      const sma200 = dailyCloses.slice(-200).reduce((s, v) => s + v, 0) / 200;
+      dualConditionResult = currentPrice > sma200;
+      conditionSource = "200dma_only";
+      console.log(`LAA 200DMA only: ${currentPrice.toFixed(2)} vs ${sma200.toFixed(2)} → ${dualConditionResult ? "ATTACK" : "DEFENSIVE"}`);
+    }
+  } catch (e) {
+    console.warn("LAA dual condition fetch error, falling back to 12M momentum:", e.message);
+  }
+
+  // 폴백: 듀얼 조건 실패 시 기존 12M 모멘텀
+  if (dualConditionResult === null) {
+    const ret = retPctFromCloses(priceSeries[indicatorCls]?.monthlyCloses || [], 12);
+    dualConditionResult = ret != null && ret >= 0;
+    conditionSource = "12m_momentum";
+    console.log(`LAA fallback to 12M momentum: ret=${ret?.toFixed(2)}% → ${dualConditionResult ? "ATTACK" : "DEFENSIVE"}`);
+  }
+
+  // 결과 적용
+  if (dualConditionResult) {
     if (attack) targets[attack.cls] = (targets[attack.cls] || 0) + momentumWeight;
   } else {
     const safeCls = defensive?.cls || "현금MMF";
     targets[safeCls] = (targets[safeCls] || 0) + momentumWeight;
   }
+
+  // 타겟 결과에 조건 출처 추가 (UI에서 표시용)
+  targets._conditionSource = conditionSource;
   return targets;
 }
 
@@ -327,7 +416,7 @@ module.exports = async function handler(req, res) {
     let targets = null;
     if (strategyId === "gtaa5") targets = computeGTAA5Targets(priceSeries, composition);
     else if (strategyId === "dual_momentum") targets = computeDualMomentumTargets(priceSeries, composition);
-    else if (strategyId === "laa") targets = computeLAATargets(priceSeries, composition);
+    else if (strategyId === "laa") targets = await computeLAATargets(priceSeries, composition);
     else if (strategyId === "daa") targets = computeDAATargets(priceSeries, composition);
 
     if (!targets) throw new Error("Calculation failed");
