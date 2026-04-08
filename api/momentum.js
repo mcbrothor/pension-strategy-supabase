@@ -363,10 +363,17 @@ function computeDAATargets(priceSeries, composition) {
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const momentumCache = globalThis.__MOMENTUM_CACHE__ || (globalThis.__MOMENTUM_CACHE__ = {});
 
-module.exports = async function handler(req, res) {
-  if (req?.method === "OPTIONS") { res.writeHead(204, corsHeaders()); return res.end(); }
+export default async function handler(req, res) {
+  if (req?.method === "OPTIONS") { 
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.writeHead(204); 
+    return res.end(); 
+  }
+  
   if (req?.method !== "POST") { 
-    res.writeHead(405, { ...corsHeaders(), "Content-Type": "application/json" });
+    res.writeHead(405, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: false, error: "POST required" }));
   }
 
@@ -377,13 +384,13 @@ module.exports = async function handler(req, res) {
     const cacheKey = `strat:${strategyId}:month:${asOf.slice(0, 7)}`;
 
     if (!strategyId || !composition) {
-      res.writeHead(400, { ...corsHeaders(), "Content-Type": "application/json" });
+      res.writeHead(400, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ ok: false, error: "strategyId and composition required" }));
     }
 
     const hit = momentumCache[cacheKey];
     if (hit && hit.expiresAt > Date.now()) {
-      res.writeHead(200, { ...corsHeaders(), "Content-Type": "application/json" });
+      res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(hit.value));
     }
 
@@ -424,10 +431,10 @@ module.exports = async function handler(req, res) {
     const result = { ok: true, strategyId, targets, mode: "role_based_momentum", updatedAt: new Date().toISOString() };
     momentumCache[cacheKey] = { value: result, expiresAt: Date.now() + CACHE_TTL_MS };
     
-    res.writeHead(200, { ...corsHeaders(), "Content-Type": "application/json" });
+    res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(result));
   } catch (e) {
-    res.writeHead(500, { ...corsHeaders(), "Content-Type": "application/json" });
+    res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: false, error: e.message }));
   }
-};
+}
