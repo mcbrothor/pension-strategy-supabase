@@ -83,8 +83,7 @@ export default function MonthlyReport({ portfolio, vix, vixSource, vixUpdatedAt,
 
     <h3>3. 전략 및 리스크 현황</h3>
     <p>적용 전략: <strong>${s.name}</strong> (${s.level}) / 계좌 유형: <strong>${portfolio.accountType} (위험자산 한도 70%)</strong><br>
-    시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}<br>
-    <small style="color:#666">데이터 출처: ${vixError ? `⚠️ ${vixError} (캐시 사용 중)` : `${vixSource} (${vixUpdatedAt ? new Date(vixUpdatedAt).toLocaleString() : "—"})`}</small></p>
+    시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}</p>
 
     <h3>4. 자산 클래스별 상세 분석</h3>
     <table><thead><tr><th>자산명</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>
@@ -167,7 +166,6 @@ export default function MonthlyReport({ portfolio, vix, vixSource, vixUpdatedAt,
               <div style={{ fontWeight: 600 }}>주요 관리 포인트</div>
               <div style={{ color: "var(--text-dim)" }}>
                 · VIX 국면: {z.lbl} ({z.mode})<br />
-                · 데이터 출처: {vixError ? <span style={{color:"#a32d2d"}}>⚠️ {vixError}</span> : `${vixSource} (${vixUpdatedAt ? new Date(vixUpdatedAt).toLocaleTimeString() : "—"})`}<br />
                 · IRP 위험한도: {holdings.filter(h => ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"].includes(h.cls)).reduce((s, h) => s + h.cur, 0).toFixed(1)}% / 70%<br />
                 · 리밸런싱 필요도: {holdings.some(h => Math.abs(h.cur - h.target) >= 5) ? "높음 (이탈 확인)" : "낮음 (안정)"}
               </div>

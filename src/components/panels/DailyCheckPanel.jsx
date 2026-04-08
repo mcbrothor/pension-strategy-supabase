@@ -173,7 +173,7 @@ export default function DailyCheckPanel({
         </Card>
 
         <Card style={{ marginBottom: 0 }}>
-          <ST>시장 상황 진단 ({vixSource})</ST>
+          <ST>시장 상황 진단</ST>
           <VixBar vix={vix} />
           <div style={{ backgroundColor: z.bg, borderRadius: "var(--radius-md)", padding: ".875rem 1rem", marginTop: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
