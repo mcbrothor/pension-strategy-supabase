@@ -1,14 +1,19 @@
-// api/kis-price.js (Vercel Serverless Function)
+import * as cheerio from 'cheerio';
+
 const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
   ? "https://openapi.koreainvestment.com:9443" 
   : "https://openapivts.koreainvestment.com:29443";
 
 let cachedToken = null;
 let tokenExpiry = 0;
+let tokenPromise = null;
 
 async function getAccessToken() {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) return cachedToken;
+  if (tokenPromise) return tokenPromise;
+  
+  tokenPromise = (async () => {
   try {
     const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
       method: "POST",
@@ -30,6 +35,8 @@ async function getAccessToken() {
     }
   } catch (e) {
     console.error("KIS Token Exception:", e.message);
+  } finally {
+    tokenPromise = null;
   }
   return null;
 }
@@ -46,6 +53,31 @@ async function fetchYahooPrice(ticker, isDomestic) {
     const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
     if (val) return { price: val, source: "Yahoo" };
   } catch (e) {}
+  return null;
+}
+
+/**
+ * 3rd Fallback: Web Crawling Yahoo Finance 
+ */
+async function fetchCrawledPrice(ticker, isDomestic) {
+  const symbol = isDomestic ? `${ticker}.KS` : ticker;
+  try {
+    const url = `https://finance.yahoo.com/quote/${symbol}`;
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    
+    const priceStr = $(`fin-streamer[data-field="regularMarketPrice"][data-symbol="${symbol}"]`).text() || 
+                     $(`fin-streamer[data-field="regularMarketPrice"]`).first().text();
+                     
+    if (priceStr) {
+      const price = parseFloat(priceStr.replace(/,/g, ''));
+      if (!isNaN(price)) return { price, source: "Crawled" };
+    }
+  } catch (e) {
+    console.error("Crawling Error:", e.message);
+  }
   return null;
 }
 
@@ -112,9 +144,17 @@ export default async function handler(req, res) {
     }
   }
 
+  // 3. Yahoo API 실패 시 웹 크롤링 폴백
+  if (!result) {
+    const cPrice = await fetchCrawledPrice(ticker, isDomestic);
+    if (cPrice) {
+      result = cPrice;
+    }
+  }
+
   if (result) {
     return res.status(200).json({ ticker, ...result });
   }
 
-  return res.status(500).json({ error: "시세 조회를 실패했습니다. (KIS & Yahoo 모두 응답 없음)" });
+  return res.status(500).json({ error: "시세 조회를 실패했습니다. (KIS, Yahoo API, Crawling 모두 실패)" });
 }

@@ -4,9 +4,19 @@ import { calculatePearsonCorr } from '../utils/calculators';
 
 const MarketContext = createContext();
 
+const safeParseJSON = (key, defaultVal) => {
+  try {
+    const text = localStorage.getItem(key);
+    return text ? JSON.parse(text) : defaultVal;
+  } catch (e) {
+    console.error(`Error parsing localStorage key "${key}":`, e);
+    return defaultVal;
+  }
+};
+
 export function MarketProvider({ children }) {
-  // 초기값: localStorage에서 불러오거나 없으면 null 사용
-  const savedVix = JSON.parse(localStorage.getItem('vix_data') || '{"vix": null, "source": "Init", "updatedAt": null}');
+  // 초기값: localStorage에서 불러오거나 없으면 null 사용 (안전한 파싱)
+  const savedVix = safeParseJSON('vix_data', { vix: null, source: "Init", updatedAt: null });
   
   const [vix, setVix] = useState(savedVix.vix);
   const [vixSource, setVixSource] = useState(savedVix.source);
@@ -18,13 +28,13 @@ export function MarketProvider({ children }) {
   const [masterError, setMasterError] = useState(null);
 
   // 상관관계 상태 (로컬 스토리지 캐시)
-  const savedCorr = JSON.parse(localStorage.getItem('corr_data') || '{"avg": 0, "matrix": {}, "updatedAt": null}');
+  const savedCorr = safeParseJSON('corr_data', { avg: 0, matrix: {}, updatedAt: null });
   const [avgCorrelation, setAvgCorrelation] = useState(savedCorr.avg || 0);
   const [corrUpdatedAt, setCorrUpdatedAt] = useState(savedCorr.updatedAt);
   const [corrLoading, setCorrLoading] = useState(false);
 
   // 2단계: 복합 시장 시그널 (Fear & Greed + 수익률 곡선 + 실업률)
-  const savedSignals = JSON.parse(localStorage.getItem('market_signals') || '{}');
+  const savedSignals = safeParseJSON('market_signals', {});
   const [fearGreed, setFearGreed] = useState(savedSignals.fearGreed || null);
   const [yieldSpread, setYieldSpread] = useState(savedSignals.yieldSpread || null);
   const [unemployment, setUnemployment] = useState(savedSignals.unemployment || null);

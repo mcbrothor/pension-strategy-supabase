@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext.jsx';
 import { DEMO_PORTFOLIO, STRATEGIES } from '../constants/index.js';
+import { computeTargets } from '../services/momentumEngine.js';
 
 const PortfolioContext = createContext();
 
@@ -63,13 +64,17 @@ export function PortfolioProvider({ children }) {
         })
       });
       const data = await res.json();
-      if (data.ok && data.targets) {
-        // API 성공: 유효 타깃 저장 및 상태 업데이트
-        setMomentumTargets(data.targets);
-        setLastGoodTargets(data.targets); // 직전 유효 타깃 보존
-        setDegradedMode(false);
-        setTargetSource('api');
-        return data.targets;
+      if (data.ok && data.data) {
+        // API 성공: 서버에서 받은 데이터로 타깃 비중 프론트엔드 직접 계산
+        const computedTargets = computeTargets(strategyId, data.data, s.composition);
+        
+        if (computedTargets) {
+          setMomentumTargets(computedTargets);
+          setLastGoodTargets(computedTargets); // 직전 유효 타깃 보존
+          setDegradedMode(false);
+          setTargetSource('api');
+          return computedTargets;
+        }
       }
     } catch (e) {
       console.error("Momentum Fetch Error:", e);
@@ -143,6 +148,7 @@ export function PortfolioProvider({ children }) {
       const mappedHoldings = (holdings || []).map(it => {
         const target = assetClassTargetMap[it.asset_class] || 0;
         return {
+          id: it.id,
           etf: it.name,
           code: it.ticker,
           cls: it.asset_class,
@@ -183,26 +189,38 @@ export function PortfolioProvider({ children }) {
     setIsSaving(true);
     try {
       const saveDate = new Date().toISOString().split("T")[0];
-      await supabase.from('holdings').delete().eq('user_id', user.id);
       
-      // 필터: 티커가 있고 (수량이 0보다 크거나 평가금액이 0보다 큰 경우)
-      // 현금MMF의 경우 수량이 0일 수 있으므로 평가금액 기준을 추가함.
-      const insertItems = items
+      // 기존 방식(전체 삭제 후 삽입)의 데이터 유실 리스크 해결: Upsert
+      const existingRes = await supabase.from('holdings').select('id').eq('user_id', user.id);
+      const existingDBIds = (existingRes.data || []).map(r => r.id);
+      
+      const incomingIds = items.map(it => it.id).filter(id => id);
+      const idsToDelete = existingDBIds.filter(id => !incomingIds.includes(id));
+      
+      if (idsToDelete.length > 0) {
+        await supabase.from('holdings').delete().in('id', idsToDelete);
+      }
+      
+      const upsertItems = items
         .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0))
-        .map(it => ({
-          user_id: user.id,
-          ticker: it.code,
-          name: it.etf || "",
-          asset_class: it.cls || "",
-          quantity: Number(it.qty) || 0,
-          current_price: Number(it.price) || 0,
-          cost_amt: Number(it.costAmt) || 0,
-          amount: Number(it.amt) || 0,
-          updated_at: new Date().toISOString()
-        }));
+        .map(it => {
+          const payload = {
+            user_id: user.id,
+            ticker: it.code,
+            name: it.etf || "",
+            asset_class: it.cls || "",
+            quantity: Number(it.qty) || 0,
+            current_price: Number(it.price) || 0,
+            cost_amt: Number(it.costAmt) || 0,
+            amount: Number(it.amt) || 0,
+            updated_at: new Date().toISOString()
+          };
+          if (it.id) payload.id = it.id;
+          return payload;
+        });
 
-      if (insertItems.length > 0) {
-        await supabase.from('holdings').insert(insertItems);
+      if (upsertItems.length > 0) {
+        await supabase.from('holdings').upsert(upsertItems, { onConflict: 'id' });
       }
 
       const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
