@@ -29,8 +29,8 @@ const labelStyle = {
   opacity: 0.8
 };
 
-// -- OCR Result Modal Component --
-const OcrResultModal = ({ isOpen, onClose, results, onConfirm, tickerMap, currentRows }) => {
+// -- Import Result Modal Component (CSV/Manual Batch) --
+const ImportResultModal = ({ isOpen, onClose, results, onConfirm, tickerMap, currentRows }) => {
   if (!isOpen) return null;
   const [data, setData] = useState(results.map(r => ({
     ...r,
@@ -63,23 +63,23 @@ const OcrResultModal = ({ isOpen, onClose, results, onConfirm, tickerMap, curren
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(12px)" }}>
       <Card style={{ width: "95%", maxWidth: 800, padding: "2.5rem", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ marginBottom: "1.5rem" }}>
-          <ST>AI 잔고 인식 결과 검토</ST>
+          <ST>CSV 자산 내역 검토</ST>
           <div style={{ fontSize: "13px", color: "var(--text-dim)", marginTop: "4px" }}>
-            스크린샷에서 추출된 데이터입니다. 정확하지 않은 정보는 수정 후 [포트폴리오에 반영]을 눌러주세요.
+            파일에서 추출된 데이터입니다. 정확하지 않은 정보는 수정 후 [포트폴리오에 반영]을 눌러주세요.
           </div>
         </div>
 
         {/* Diff Summary Box */}
         <div style={{ display: "flex", gap: "10px", marginBottom: "1.5rem", padding: "1rem", background: "rgba(37, 99, 235, 0.05)", borderRadius: "10px", border: "1px solid rgba(37, 99, 235, 0.1)" }}>
-           <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "11px", color: "var(--color-primary)", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>변경 사항 요약</div>
-              <div style={{ fontSize: "14px", fontWeight: 600 }}>
-                총 {diffSummary.totals}개 중 <span style={{ color: "var(--color-primary)" }}>{diffSummary.news}개 신규</span>, <span style={{ color: "var(--color-warning)" }}>{diffSummary.updates}개 업데이트</span> 예정
-              </div>
-           </div>
-           <div style={{ fontSize: "12px", color: "var(--text-dim)", display: "flex", alignItems: "center" }}>
-              반영하시겠습니까? "예"를 누르면 현재 포트폴리오에 병합됩니다.
-           </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "11px", color: "var(--color-primary)", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>변경 사항 요약</div>
+            <div style={{ fontSize: "14px", fontWeight: 600 }}>
+              총 {diffSummary.totals}개 중 <span style={{ color: "var(--color-primary)" }}>{diffSummary.news}개 신규</span>, <span style={{ color: "var(--color-warning)" }}>{diffSummary.updates}개 업데이트</span> 예정
+            </div>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-dim)", display: "flex", alignItems: "center" }}>
+            반영하시겠습니까? "예"를 누르면 현재 포트폴리오에 병합됩니다.
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", marginBottom: "1.5rem" }}>
@@ -187,7 +187,7 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
           <ST>종목 정보 수정</ST>
           <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "-4px" }}>보유 자산의 상세 정보를 안전하게 정정합니다.</div>
         </div>
-        
+
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           <div>
             <label style={labelStyle}>자산군</label>
@@ -199,33 +199,33 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
             <label style={labelStyle}>종목명</label>
             <input style={inputStyle} value={data.etf} onChange={e => update("etf", e.target.value)} list="etf-list-modal" placeholder="종목 이름을 입력하세요" />
           </div>
-          
+
           {!isCash && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "10px", alignItems: "end" }}>
-               <div>
-                  <label style={labelStyle}>티커 / 종목 코드</label>
-                  <input style={{ ...inputStyle, fontFamily: "monospace" }} value={data.code} onChange={e => update("code", e.target.value)} onBlur={fetchPrice} placeholder="예: 360750" />
-               </div>
-               <Btn sm onClick={fetchPrice} style={{ height: "42px", width: "100%" }} disabled={loading}>{loading ? "..." : "시세조회"}</Btn>
+              <div>
+                <label style={labelStyle}>티커 / 종목 코드</label>
+                <input style={{ ...inputStyle, fontFamily: "monospace" }} value={data.code} onChange={e => update("code", e.target.value)} onBlur={fetchPrice} placeholder="예: 360750" />
+              </div>
+              <Btn sm onClick={fetchPrice} style={{ height: "42px", width: "100%" }} disabled={loading}>{loading ? "..." : "시세조회"}</Btn>
             </div>
           )}
-          
+
           {!isCash ? (
-             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
-                <div>
-                   <label style={labelStyle}>수량</label>
-                   <input type="number" style={inputStyle} value={data.qty} onChange={e => update("qty", e.target.value)} />
-                </div>
-                <div>
-                   <label style={labelStyle}>현재가 (단가)</label>
-                   <input type="number" style={inputStyle} value={data.price} onChange={e => update("price", e.target.value)} />
-                </div>
-             </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+              <div>
+                <label style={labelStyle}>수량</label>
+                <input type="number" style={inputStyle} value={data.qty} onChange={e => update("qty", e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>현재가 (단가)</label>
+                <input type="number" style={inputStyle} value={data.price} onChange={e => update("price", e.target.value)} />
+              </div>
+            </div>
           ) : (
-             <div>
-                <label style={labelStyle}>실제 평가 금액 (원)</label>
-                <input type="number" style={{ ...inputStyle, fontWeight: 700, fontSize: "16px", border: "1px solid var(--accent-main)" }} value={data.amt} onChange={e => update("amt", e.target.value)} />
-             </div>
+            <div>
+              <label style={labelStyle}>실제 평가 금액 (원)</label>
+              <input type="number" style={{ ...inputStyle, fontWeight: 700, fontSize: "16px", border: "1px solid var(--accent-main)" }} value={data.amt} onChange={e => update("amt", e.target.value)} />
+            </div>
           )}
 
           <div>
@@ -241,7 +241,7 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
               {pnlPct != null ? `현재 평가손익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "입력 시 보고서의 평가손익률 계산에 반영됩니다."}
             </div>
           </div>
-          
+
           <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <Btn style={{ padding: "12px" }} onClick={onClose}>취소</Btn>
             <Btn primary style={{ padding: "12px" }} onClick={() => onSave(data)}>변경 사항 적용</Btn>
@@ -261,8 +261,8 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
   const [newItem, setNewItem] = useState({ etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0, costAmt: 0 });
   const [loading, setLoading] = useState(false);
   const [editTarget, setEditTarget] = useState({ item: null, idx: -1 });
-  const [ocrResults, setOcrResults] = useState(null);
-  const [ocrLoading, setOcrLoading] = useState(false);
+  const [importResults, setImportResults] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
   const [updatedTickers, setUpdatedTickers] = useState(new Set());
 
   useEffect(() => {
@@ -355,35 +355,80 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
     }
   }
 
-  // -- OCR Logic --
-  async function handleOcrFile(e) {
+  // -- CSV Import Logic --
+  async function handleCsvFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setOcrLoading(true);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = async () => {
-        const base64 = reader.result;
-        const res = await fetch("/api/ocr-balance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: base64 })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setOcrResults(data.holdings);
-        } else {
-          alert(data.error || "인식 실패");
-        }
-        setOcrLoading(false);
-      };
-    } catch (err) {
-      console.error(err);
-      alert("파일 처리 중 오류 발생");
-      setOcrLoading(false);
-    }
+    setImportLoading(true);
+    const reader = new FileReader();
+    reader.readAsText(file, "EUC-KR"); // 국내 증권사는 보통 EUC-KR 사용
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        
+        // 정교한 CSV 파싱 (따옴표 내 쉼표 처리 포함)
+        const parseLine = (line) => {
+          const result = [];
+          let cur = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              result.push(cur.trim().replace(/^"|"$/g, "").replace(/""/g, '"'));
+              cur = "";
+            } else {
+              cur += char;
+            }
+          }
+          result.push(cur.trim().replace(/^"|"$/g, "").replace(/""/g, '"'));
+          return result;
+        };
+
+        const rawRows = text.split(/\r?\n/).filter(r => r.trim()).map(parseLine);
+        
+        let headerIdx = rawRows.findIndex(r => r.some(c => c.includes("종목") || c.includes("명칭")));
+        if (headerIdx === -1) headerIdx = 0;
+
+        const header = rawRows[headerIdx];
+        const dataRows = rawRows.slice(headerIdx + 1).filter(r => r.length > 1 && r[0]);
+
+        const colMap = {
+          name: header.findIndex(c => c.includes("종목") || c.includes("상품") || c.includes("명칭")),
+          code: header.findIndex(c => c.includes("코드") || c.includes("티커") || c.includes("번호")),
+          qty: header.findIndex(c => c.includes("수량") || c.includes("잔고")),
+          price: header.findIndex(c => c.includes("현재가") || c.includes("단가")),
+          amt: header.findIndex(c => c.includes("평가금액") || c.includes("평가액"))
+        };
+
+        const parsed = dataRows.map(r => {
+          const qty = Number(r[colMap.qty]?.replace(/,/g, "")) || 0;
+          const price = Number(r[colMap.price]?.replace(/,/g, "")) || 0;
+          const amt = Number(r[colMap.amt]?.replace(/,/g, "")) || (qty * price);
+          
+          return {
+            etf: r[colMap.name] || "알 수 없는 종목",
+            code: r[colMap.code] || "",
+            qty,
+            price,
+            amt,
+            costAmt: 0
+          };
+        }).filter(r => r.qty > 0);
+
+        if (parsed.length === 0) throw new Error("유효한 자산 데이터를 찾을 수 없습니다.");
+        setImportResults(parsed);
+      } catch (err) {
+        alert("CSV 파싱 실패: " + err.message);
+      }
+      setImportLoading(false);
+    };
+    reader.onerror = () => {
+      alert("파일 읽기 오류");
+      setImportLoading(false);
+    };
   }
 
   function handleBatchAdd(items) {
@@ -400,12 +445,11 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
       newUpdated.add(key);
     });
 
-    const updated = Object.values(existingMap);
-    setRows(updated);
-    onSave(updated);
-    setOcrResults(null);
+    const updatedList = Object.values(existingMap);
+    setRows(updatedList);
+    onSave(updatedList);
+    setImportResults(null);
 
-    // 하이라이트 활성화
     setUpdatedTickers(newUpdated);
     setTimeout(() => setUpdatedTickers(new Set()), 5000); // 5초 후 강조 제거
   }
@@ -413,34 +457,34 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.5rem", alignItems: "start" }}>
-        {/* Left Section: OCR Scan & Add Form & Holding Table */}
+        {/* Left Section: CSV Import & Add Form & Holding Table */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           
-          {/* AI OCR Upload Zone */}
-          <Card style={{ border: "2px dashed var(--accent-main)", opacity: ocrLoading ? 0.6 : 1, transition: "all 0.3s ease", position: "relative" }}>
+          {/* CSV Import Upload Zone */}
+          <Card style={{ border: "2px dashed var(--accent-main)", opacity: importLoading ? 0.6 : 1, transition: "all 0.3s ease", position: "relative", background: "rgba(37, 99, 235, 0.02)" }}>
              <div style={{ textAlign: "center", padding: "1rem" }}>
-                <div style={{ fontSize: "24px", marginBottom: "10px" }}>📸</div>
+                <div style={{ fontSize: "24px", marginBottom: "10px" }}>📊</div>
                 <div style={{ fontWeight: 700, color: "var(--accent-main)", marginBottom: "4px" }}>
-                  {ocrLoading ? "AI가 잔고를 분석 중입니다..." : "AI 잔고 스크린샷 자동 인식"}
+                  {importLoading ? "파일을 분석 중입니다..." : "CSV 자산 내역 가져오기"}
                 </div>
                 <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
-                  MTS 잔고 화면을 캡처하여 업로드하면 종목이 자동 등록됩니다.
+                  증권사에서 다운로드한 보유내역 CSV 파일을 업로드하세요.
                 </div>
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept=".csv" 
                   style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
-                  onChange={handleOcrFile}
-                  disabled={ocrLoading}
+                  onChange={handleCsvFile}
+                  disabled={importLoading}
                 />
              </div>
-             {ocrLoading && (
-               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.2)", borderRadius: "12px" }}>
-                  <div className="spinner" style={{ width: "24px", height: "24px", border: "3px solid var(--accent-main)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }}></div>
+             {importLoading && (
+               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.05)", borderRadius: "12px" }}>
+                  <div className="spinner"></div>
                </div>
              )}
           </Card>
-          
+
           {/* Add Form Card */}
           <Card accent="var(--accent-main)">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
@@ -522,7 +566,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
               <ST>보유 자산 내역</ST>
               <Btn sm onClick={clearAll} danger>전체 삭제</Btn>
             </div>
-            
+
             <div style={{ overflowX: "auto" }}>
               <table className="premium-table">
                 <thead>
@@ -543,7 +587,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                     const isNewUpdate = updatedTickers.has(r.code || r.etf);
 
                     return (
-                      <tr key={i} style={{ 
+                      <tr key={i} style={{
                         borderBottom: "0.5px solid rgba(255,255,255,0.03)",
                         background: isNewUpdate ? "rgba(5, 150, 105, 0.08)" : undefined,
                         transition: "background 1s ease"
@@ -577,13 +621,13 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                 </tbody>
               </table>
             </div>
-            
+
             {rows.length === 0 && (
               <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--text-dim)", fontSize: "14px", border: "1px dashed var(--border-glass)", borderRadius: "8px", marginTop: "1rem" }}>
                 등록된 자산이 없습니다. 상단 양식을 통해 포트폴리오를 구성해 보세요.
               </div>
             )}
-            
+
             <div style={{ marginTop: "2rem", padding: "1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
                 총 <strong style={{ color: "var(--text-main)" }}>{rows.length}</strong>개의 자산 보유 중
@@ -639,7 +683,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
       </div>
 
       {/* Edit Modal Overlay */}
-      <EditModal 
+      <EditModal
         isOpen={editTarget.idx !== -1}
         item={editTarget.item}
         onClose={() => setEditTarget({ item: null, idx: -1 })}
@@ -648,10 +692,10 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
         tickerMap={tickerMap}
       />
 
-      <OcrResultModal 
-        isOpen={!!ocrResults}
-        results={ocrResults || []}
-        onClose={() => setOcrResults(null)}
+      <ImportResultModal
+        isOpen={!!importResults}
+        results={importResults || []}
+        onClose={() => setImportResults(null)}
         onConfirm={handleBatchAdd}
         tickerMap={tickerMap}
         currentRows={rows}
