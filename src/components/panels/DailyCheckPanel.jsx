@@ -17,7 +17,7 @@ export default function DailyCheckPanel({
   avgCorrelation, corrUpdatedAt, corrLoading, onRefreshCorr,
   degradedMode, targetSource,
   // 2단계: 복합 시장 시그널
-  fearGreed, yieldSpread, unemployment, signalsLoading, onRefreshSignals
+  fearGreed, yieldSpread, unemployment, signalsLoading, signalsError, onRefreshSignals
 }) {
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
@@ -200,6 +200,11 @@ export default function DailyCheckPanel({
           <ST>🌍 시장 센티먼트</ST>
           <Btn sm onClick={onRefreshSignals} disabled={signalsLoading}>{signalsLoading ? "갱신 중…" : "시그널 갱신"}</Btn>
         </div>
+        {signalsError && (
+          <div style={{ background: "var(--alert-warn-bg)", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11, color: "var(--alert-warn-color)" }}>
+            시장 시그널 일부 조회 실패: {signalsError}. 표시되는 값은 마지막 성공값이거나 조회 가능한 무료 데이터만 반영된 값일 수 있습니다.
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
           {/* Fear & Greed */}
           <div style={{ background: "var(--bg-main)", borderRadius: 8, padding: "12px 14px" }}>

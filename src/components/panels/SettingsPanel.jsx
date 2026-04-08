@@ -18,9 +18,16 @@ const SUB_TABS = [
 
 export default function SettingsPanel({
   portfolio, setPortfolio, saveHoldings, krEtfs, tickerMap, masterError,
-  user, login, signUp, logout, isSaving
+  user, login, signUp, logout, isSaving, initialSubTab, onSubTabHandled
 }) {
   const [subTab, setSubTab] = useState("assets");
+
+  React.useEffect(() => {
+    if (initialSubTab) {
+      setSubTab(initialSubTab);
+      if (onSubTabHandled) onSubTabHandled();
+    }
+  }, [initialSubTab, onSubTabHandled]);
 
   return (
     <div>

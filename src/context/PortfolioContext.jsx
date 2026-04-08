@@ -295,7 +295,7 @@ export function PortfolioProvider({ children }) {
       loadPortfolio, 
       saveHoldings, 
       updateStrategy,
-      // 정합성 수정: 폴백 상태 노출 (UI에서 경고 표시용)
+      fetchMomentumTargets, // 미리보기용 노출
       degradedMode,
       targetSource
     }}>
@@ -305,4 +305,3 @@ export function PortfolioProvider({ children }) {
 }
 
 export const usePortfolio = () => useContext(PortfolioContext);
-

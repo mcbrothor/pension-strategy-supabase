@@ -78,6 +78,10 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
     });
   };
 
+  const pnlPct = Number(data.costAmt) > 0
+    ? ((Number(data.amt) - Number(data.costAmt)) / Number(data.costAmt)) * 100
+    : null;
+
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
       <Card style={{ width: "95%", maxWidth: 480, padding: "2.5rem", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)", border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -125,6 +129,20 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
                 <input type="number" style={{ ...inputStyle, fontWeight: 700, fontSize: "16px", border: "1px solid var(--accent-main)" }} value={data.amt} onChange={e => update("amt", e.target.value)} />
              </div>
           )}
+
+          <div>
+            <label style={labelStyle}>매입원가 / 원금 (선택)</label>
+            <input
+              type="number"
+              style={inputStyle}
+              value={data.costAmt || ""}
+              onChange={e => update("costAmt", e.target.value)}
+              placeholder="MTS의 매입금액 또는 원금을 입력하세요"
+            />
+            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 5 }}>
+              {pnlPct != null ? `현재 평가손익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "입력 시 보고서의 평가손익률 계산에 반영됩니다."}
+            </div>
+          </div>
           
           <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <Btn style={{ padding: "12px" }} onClick={onClose}>취소</Btn>
@@ -142,7 +160,7 @@ const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
 // -- Main Panel Component --
 export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap = {}, masterError }) {
   const [rows, setRows] = useState(portfolio.holdings || []);
-  const [newItem, setNewItem] = useState({ etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0 });
+  const [newItem, setNewItem] = useState({ etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0, costAmt: 0 });
   const [loading, setLoading] = useState(false);
   const [editTarget, setEditTarget] = useState({ item: null, idx: -1 });
 
@@ -208,7 +226,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
 
     const updatedRows = [...rows, { ...newItem }];
     setRows(updatedRows);
-    setNewItem({ etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0 }); // reset form
+    setNewItem({ etf: "", code: "", cls: "미국주식", qty: 0, price: 0, amt: 0, costAmt: 0 }); // reset form
     await onSave(updatedRows);
   }
 
@@ -244,7 +262,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
           
           {/* Add Form Card */}
           <Card accent="var(--accent-main)">
-            <div style={{ display: "flex", justifyBetween: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <ST>새 종목 추가하기</ST>
               {newItem.cls !== "현금MMF" && (
                 <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
@@ -282,8 +300,22 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                 )}
               </div>
 
+              <div>
+                <label style={labelStyle}>매입원가 / 원금 (선택)</label>
+                <input
+                  placeholder="평가손익률 계산용"
+                  type="number"
+                  style={inputStyle}
+                  value={newItem.costAmt || ""}
+                  onChange={e => updateNew("costAmt", e.target.value)}
+                />
+                <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 5 }}>
+                  MTS의 매입금액을 입력하면 리포트와 자산 목록에서 원가 기준 수익률을 계산합니다.
+                </div>
+              </div>
+
               {/* Row 2: Helper & Action */}
-              <div style={{ display: "flex", justifyBetween: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(255,255,255,0.02)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(255,255,255,0.02)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   {newItem.cls !== "현금MMF" && (
                     <>
@@ -305,7 +337,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
 
           {/* Holdings List Card */}
           <Card>
-            <div style={{ display: "flex", justifyBetween: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <ST>보유 자산 내역</ST>
               <Btn sm onClick={clearAll} danger>전체 삭제</Btn>
             </div>
@@ -319,28 +351,36 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
                     <th style={{ textAlign: "right", width: 100 }}>수량</th>
                     <th style={{ textAlign: "right", width: 120 }}>현재가</th>
                     <th style={{ textAlign: "right", width: 150 }}>평가금액</th>
+                    <th style={{ textAlign: "right", width: 140 }}>평가손익</th>
                     <th style={{ textAlign: "center", width: 110 }}>관리</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i} style={{ borderBottom: "0.5px solid rgba(255,255,255,0.03)" }}>
-                      <td style={{ padding: "16px 0" }}>
-                        <div style={{ fontSize: "14.5px", fontWeight: 600, color: "var(--text-main)" }}>{r.etf || "미지정 자산"}</div>
-                        <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: 4, letterSpacing: "0.02em" }}>{r.code || "CASH_ASSET"}</div>
-                      </td>
-                      <td style={{ padding: "16px 0" }}><Badge bg={ASSET_COLORS[r.cls] + "15"} c={ASSET_COLORS[r.cls]}>{r.cls}</Badge></td>
-                      <td style={{ textAlign: "right", fontSize: "13.5px", padding: "16px 0" }}>{fmt(r.qty)}</td>
-                      <td style={{ textAlign: "right", fontSize: "13.5px", color: "var(--text-dim)", padding: "16px 0" }}>{fmt(r.price)}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700, fontSize: "14.5px", color: "var(--text-main)", padding: "16px 0" }}>{fmt(r.amt)}</td>
-                      <td style={{ textAlign: "center", padding: "16px 0" }}>
-                        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                          <Btn sm onClick={() => setEditTarget({ item: r, idx: i })} style={{ padding: "4px 10px", fontSize: "10px" }}>수정</Btn>
-                          <Btn sm onClick={() => handleRemove(i)} danger style={{ padding: "4px 10px", fontSize: "10px" }}>삭제</Btn>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((r, i) => {
+                    const pnl = Number(r.costAmt) > 0 ? Number(r.amt) - Number(r.costAmt) : null;
+                    const pnlPct = pnl != null ? (pnl / Number(r.costAmt)) * 100 : null;
+                    return (
+                      <tr key={i} style={{ borderBottom: "0.5px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding: "16px 0" }}>
+                          <div style={{ fontSize: "14.5px", fontWeight: 600, color: "var(--text-main)" }}>{r.etf || "미지정 자산"}</div>
+                          <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: 4, letterSpacing: "0.02em" }}>{r.code || "CASH_ASSET"}</div>
+                        </td>
+                        <td style={{ padding: "16px 0" }}><Badge bg={ASSET_COLORS[r.cls] + "15"} c={ASSET_COLORS[r.cls]}>{r.cls}</Badge></td>
+                        <td style={{ textAlign: "right", fontSize: "13.5px", padding: "16px 0" }}>{fmt(r.qty)}</td>
+                        <td style={{ textAlign: "right", fontSize: "13.5px", color: "var(--text-dim)", padding: "16px 0" }}>{fmt(r.price)}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700, fontSize: "14.5px", color: "var(--text-main)", padding: "16px 0" }}>{fmt(r.amt)}</td>
+                        <td style={{ textAlign: "right", fontSize: "12px", padding: "16px 0", color: pnl == null ? "var(--text-dim)" : pnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}>
+                          {pnl == null ? "원가 필요" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                        </td>
+                        <td style={{ textAlign: "center", padding: "16px 0" }}>
+                          <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                            <Btn sm onClick={() => setEditTarget({ item: r, idx: i })} style={{ padding: "4px 10px", fontSize: "10px" }}>수정</Btn>
+                            <Btn sm onClick={() => handleRemove(i)} danger style={{ padding: "4px 10px", fontSize: "10px" }}>삭제</Btn>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -351,7 +391,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
               </div>
             )}
             
-            <div style={{ marginTop: "2rem", padding: "1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyBetween: "space-between", alignItems: "center" }}>
+            <div style={{ marginTop: "2rem", padding: "1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
                 총 <strong style={{ color: "var(--text-main)" }}>{rows.length}</strong>개의 자산 보유 중
               </div>
@@ -392,7 +432,7 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {sortedAlloc.map(([cls, amt], i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", justifyBetween: "space-between" }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <div style={{ width: "10px", height: "10px", borderRadius: "3px", background: ASSET_COLORS[cls] || "#888" }} />
                     <span style={{ fontSize: "12px", color: "var(--text-dim)", fontWeight: 500 }}>{cls}</span>

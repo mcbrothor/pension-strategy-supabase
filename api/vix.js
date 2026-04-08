@@ -1,19 +1,15 @@
-/**
- * Serverless Proxy: /api/vix 
- * VIX 지수 조회 (KIS & Yahoo Fallback)
- */
-
 const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
   ? "https://openapi.koreainvestment.com:9443" 
   : "https://openapivts.koreainvestment.com:29443";
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_TTL_MS = 15 * 60 * 1000;
 const cache = globalThis.__VIX_CACHE__ || (globalThis.__VIX_CACHE__ = {});
 
+// 내부 토큰 관리 (utils/kis-auth.js가 없을 경우를 대비한 내장형)
 let cachedToken = null;
 let tokenExpiry = 0;
 
-async function getAccessToken() {
+async function getInternalToken() {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) return cachedToken;
 
@@ -37,99 +33,95 @@ async function getAccessToken() {
 }
 
 export default async function handler(req, res) {
-  // CORS 처리
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   const now = Date.now();
-  const hit = cache.vix && cache.vix.expiresAt > now ? cache.vix : null;
-  if (hit) {
-    return res.status(200).json({ ok: true, ...hit });
+  if (cache.vix && cache.vix.expiresAt > now) {
+    return res.status(200).json({ ok: true, ...cache.vix });
   }
 
   let result = null;
-  let kisError = null;
-  let yahooError = null;
+  let errors = [];
 
   // 1. KIS API (Priority)
   try {
-    const token = await getAccessToken();
-    // VIX는 지수이므로 HDFS00000300 (해외지수 현재가) 사용 시도
-    // 만약 이것도 안된다면 HHDFS00000300 (해외주식 현재가)로 폴백
+    const token = await getInternalToken();
+    
+    // VIX는 KIS에서 '지수'로 분류됨. 전용 엔드포인트 시도.
+    // TR_ID: HDFS00000300 (해외지수 현재가)
     const url = `${API_BASE_URL}/uapi/overseas-stock/v1/quotations/inquire-price?AUTH=""&EXCD=NYS&SYMB=VIX`;
-    const priceRes = await fetch(url, {
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${token}`,
-        "appkey": process.env.KIS_APP_KEY,
-        "appsecret": process.env.KIS_APP_SECRET,
-        "tr_id": "HDFS00000300" // 해외 지수 현재가용 (H 한 개 제거됨)
-      }
-    });
-
-    const body = await priceRes.json();
-    if (body.output && body.output.last) {
-      result = { vix: Number(body.output.last), source: "KIS" };
-    } else {
-      // 인덱스용 TR이 실패한 경우 주식용 TR로 한 번 더 시도 (VIX가 주식 종목처럼 취급되는 환경 대비)
-      const subRes = await fetch(url, {
+    
+    const fetchVix = async (trId) => {
+      const r = await fetch(url, {
         headers: {
+          "content-type": "application/json",
           "authorization": `Bearer ${token}`,
           "appkey": process.env.KIS_APP_KEY,
           "appsecret": process.env.KIS_APP_SECRET,
-          "tr_id": "HHDFS00000300" 
-        }
+          "tr_id": trId
+        },
+        signal: AbortSignal.timeout(5000)
       });
-      const subBody = await subRes.json();
-      if (subBody.output && subBody.output.last) {
-        result = { vix: Number(subBody.output.last), source: "KIS(StockTR)" };
+      return await r.json();
+    };
+
+    // 지수 TR 시도
+    let body = await fetchVix("HDFS00000300");
+    if (body.output && body.output.last) {
+      result = { vix: Number(body.output.last), source: "KIS" };
+    } else {
+      // 주식 TR 시도 (일부 환경에서 종목처럼 조회되는 경우 대비)
+      body = await fetchVix("HHDFS00000300");
+      if (body.output && body.output.last) {
+        result = { vix: Number(body.output.last), source: "KIS(Fallback)" };
       } else {
-        kisError = body.msg1 || subBody.msg1 || "KIS Data Empty";
+        errors.push(`KIS failure: ${body.msg1 || "No output"}`);
       }
     }
   } catch (e) {
-    kisError = e.message;
+    errors.push(`KIS exception: ${e.message}`);
   }
 
   // 2. Yahoo Finance Fallback
   if (!result) {
     try {
-      const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX';
+      const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1m&range=1d';
       const yRes = await fetch(yahooUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
-        }
+        headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1" },
+        signal: AbortSignal.timeout(5000)
       });
+      
       if (yRes.ok) {
         const d = await yRes.json();
-        const val = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (typeof val === "number" && val > 0) {
+        const meta = d?.chart?.result?.[0]?.meta;
+        const val = meta?.regularMarketPrice || meta?.previousClose;
+        if (val) {
           result = { vix: val, source: "Yahoo" };
         } else {
-          yahooError = "Yahoo format invalid";
+          errors.push("Yahoo data empty");
         }
       } else {
-        yahooError = `Yahoo HTTP ${yRes.status}`;
+        errors.push(`Yahoo HTTP ${yRes.status}`);
       }
     } catch (e) {
-      yahooError = e.message;
+      errors.push(`Yahoo exception: ${e.message}`);
     }
   }
 
   if (result) {
-    const updatedAt = new Date(now).toISOString();
-    cache.vix = { ...result, expiresAt: now + CACHE_TTL_MS, updatedAt };
+    result.updatedAt = new Date().toISOString();
+    cache.vix = { ...result, expiresAt: now + CACHE_TTL_MS };
     return res.status(200).json({ ok: true, ...cache.vix });
   }
 
-  // 여전히 실패한 경우 상세 정보와 함께 500 반환
+  // 모든 시도 실패 시
   return res.status(500).json({ 
     ok: false, 
-    error: `전체 소스 조회 실패. KIS: ${kisError}, Yahoo: ${yahooError}` 
+    error: "VIX 조회 실패",
+    details: errors.join(" | ")
   });
 }

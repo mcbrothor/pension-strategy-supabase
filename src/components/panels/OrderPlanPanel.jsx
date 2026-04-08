@@ -39,6 +39,9 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
   const holdTickets = tickets.filter(t => t.actionType === 'hold');
   const actionTickets = [...sellTickets, ...buyTickets];
   const doneCount = Object.values(checked).filter(Boolean).length;
+  const totalSellAmount = sellTickets.reduce((sum, t) => sum + t.amount, 0);
+  const totalBuyAmount = buyTickets.reduce((sum, t) => sum + t.amount, 0);
+  const cashGap = totalBuyAmount - totalSellAmount;
 
   const [savingConfig, setSavingConfig] = useState(false);
   const [saveComplete, setSaveComplete] = useState(false);
@@ -122,6 +125,15 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
           <MetaCard label="매수" value={`${buyTickets.length}건`} sub={buyTickets.length > 0 ? `${fmt(buyTickets.reduce((s, t) => s + t.amount, 0))}원` : "—"} subColor="var(--alert-info-color)" />
           <MetaCard label="유지" value={`${holdTickets.length}건`} />
         </div>
+        <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--bg-main)", borderRadius: 8, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
+          MTS 주문 참고용 금액입니다. 실제 주문 전에는 MTS의 현재가, 주문 가능 현금, 최소 주문 단위를 다시 확인하세요.
+          {actionTickets.length > 0 && (
+            <div style={{ marginTop: 4, color: cashGap > 0 ? "var(--alert-warn-color)" : "var(--text-dim)" }}>
+              매수 필요액 {fmt(totalBuyAmount)}원 / 매도 참고액 {fmt(totalSellAmount)}원
+              {cashGap > 0 ? ` → 추가 현금 약 ${fmt(cashGap)}원 필요 가능` : " → 매도 참고액 범위 내"}
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* 판단 근거 */}
@@ -150,6 +162,9 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
                   </div>
                   <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.5 }}>
                     {t.reasons.map((r, ri) => <div key={ri}>• {r}</div>)}
+                    {t.actionType === 'buy' && t.splitPlan > 1 && (
+                      <div>• MTS 참고: 1회당 약 {fmt(Math.round(t.amount / t.splitPlan / 10000) * 10000)}원</div>
+                    )}
                   </div>
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: t.actionType === 'sell' ? "#a32d2d" : "#185fa5", flexShrink: 0 }}>

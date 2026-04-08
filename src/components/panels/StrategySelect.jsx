@@ -2,11 +2,15 @@ import React, { useState } from "react";
 import { Card, Badge, Btn, ST } from "../common/index.jsx";
 import { STRATEGIES, ASSET_COLORS } from "../../constants/index.js";
 import { irpLimit } from "../../utils/helpers.js";
+import { usePortfolio } from "../../context/PortfolioContext.jsx";
 
 export default function StrategySelect({ accountType, onStrategyApply }) {
+  const { fetchMomentumTargets } = usePortfolio();
   const [acc, setAcc] = useState(accountType || "연금저축");
   const [filt, setFilt] = useState("all");
   const [sel, setSel] = useState(null);
+  const [precalcTargets, setPrecalcTargets] = useState(null);
+  const [calcLoading, setCalcLoading] = useState(false);
   const limit = irpLimit(acc);
   const vis = STRATEGIES.filter(s => filt === "all" || s.type === filt);
 
@@ -49,7 +53,22 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
           const irp = irpBadge(s);
           const isSel = s.id === sel;
           return (
-            <div key={s.id} onClick={() => setSel(s.id === sel ? null : s.id)}
+            <div key={s.id} onClick={async () => {
+              if (s.id === sel) {
+                setSel(null);
+                setPrecalcTargets(null);
+              } else {
+                setSel(s.id);
+                if (s.type === "momentum") {
+                  setCalcLoading(true);
+                  const t = await fetchMomentumTargets(s.id);
+                  setPrecalcTargets(t);
+                  setCalcLoading(false);
+                } else {
+                  setPrecalcTargets(null);
+                }
+              }
+            }}
               style={{ background: "var(--bg-card)", border: `${isSel ? "2px" : "0.5px"} solid ${isSel ? (s.type === "fixed" ? "#3b6d11" : "#ba7517") : "var(--border-glass)"}`, borderRadius: "var(--border-radius-lg)", padding: "1rem", cursor: "pointer" }}>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 7 }}>
                 <Badge c={s.type === "fixed" ? "#27500a" : "#633806"} bg={s.type === "fixed" ? "#eaf3de" : "#faeeda"}>{s.type === "fixed" ? "실행가능" : "자동 계산"}</Badge>
@@ -113,17 +132,25 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
                   <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>{selS.type === "fixed" ? "비중" : "역할"}</th>
                   <th style={{ textAlign: "left", padding: "4px 6px", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>위험</th>
                 </tr></thead>
-                <tbody>{selS.composition.map((c, i) => (
-                  <tr key={i} style={{ borderBottom: "0.5px solid var(--border-glass)" }}>
-                    <td style={{ padding: "8px 6px" }}><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-main)" }}>{c.cls}</div></td>
-                    <td style={{ padding: "8px 6px" }}>
-                      {selS.type === "fixed" && c.w != null
-                        ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ flex: 1, height: 5, background: "var(--bg-main)", borderRadius: 3, overflow: "hidden", minWidth: 40 }}><div style={{ height: "100%", width: `${c.w}%`, background: ASSET_COLORS[c.cls] || "#888", borderRadius: 3 }} /></div><span style={{ fontSize: 11, fontWeight: 600, minWidth: 26, textAlign: "right" }}>{c.w}%</span></div>
-                        : <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{c.note || "자동 계산"}</span>}
-                    </td>
-                    <td style={{ padding: "8px 6px" }}><span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, fontWeight: 600, background: c.risk ? "#fcebeb" : "#eaf3de", color: c.risk ? "#791f1f" : "#27500a" }}>{c.risk ? "위험" : "안전"}</span></td>
-                  </tr>
-                ))}</tbody>
+                 <tbody>{selS.composition.map((c, i) => {
+                  const targetW = precalcTargets ? precalcTargets[c.cls] : c.w;
+                  return (
+                    <tr key={i} style={{ borderBottom: "0.5px solid var(--border-glass)" }}>
+                      <td style={{ padding: "8px 6px" }}><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-main)" }}>{c.cls}</div></td>
+                      <td style={{ padding: "8px 6px" }}>
+                        {(selS.type === "fixed" || precalcTargets) && targetW != null
+                          ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <div style={{ flex: 1, height: 5, background: "var(--bg-main)", borderRadius: 3, overflow: "hidden", minWidth: 40 }}>
+                                <div style={{ height: "100%", width: `${targetW}%`, background: ASSET_COLORS[c.cls] || "#888", borderRadius: 3 }} />
+                              </div>
+                              <span style={{ fontSize: 11, fontWeight: 600, minWidth: 26, textAlign: "right" }}>{targetW}%</span>
+                            </div>
+                          : <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{calcLoading ? "계산 중..." : (c.note || "자동 계산")}</span>}
+                      </td>
+                      <td style={{ padding: "8px 6px" }}><span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, fontWeight: 600, background: c.risk ? "#fcebeb" : "#eaf3de", color: c.risk ? "#791f1f" : "#27500a" }}>{c.risk ? "위험" : "안전"}</span></td>
+                    </tr>
+                  );
+                })}</tbody>
               </table>
             </div>
             <div>

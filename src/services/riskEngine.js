@@ -165,8 +165,8 @@ export function calculateRealizedRisk(holdings, historicalData, expectedReturn =
     minLen = Math.min(minLen, returns.length);
   }
 
-  if (minLen === Infinity || minLen < 5) {
-    return { vol: 0, sharpe: 0, sortino: 0, cvar: 0, mdd: 0, calcMode: 'error_insufficient_data', dailyReturns: [] };
+  if (minLen === Infinity || minLen < 2) {
+    return { vol: 0, sharpe: 0, sortino: 0, cvar: 0, mdd: 0, calcMode: 'error_insufficient_data', dailyReturns: [], warnings: ["과거 시세 데이터가 부족하여 실현 리스크를 계산할 수 없습니다."] };
   }
 
   // 2. 포트폴리오 일간 수익률 계산 (최근 minLen일치)

@@ -39,10 +39,11 @@ const TABS = [
 export default function PensionPilot() {
   // 기본 진입: 일일점검
   const [tab, setTab] = useState("daily");
+  const [requestedSubTab, setRequestedSubTab] = useState(null);
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   // Contexts
-  const { user, login, signUp, logout, loading: authLoading } = useAuth();
+  const { user, login, signUp, logout } = useAuth();
   const { 
     vix, vixSource, vixUpdatedAt, vixLoading, vixError, fetchVix, krEtfs, tickerMap, masterError,
     avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation,
@@ -50,16 +51,20 @@ export default function PensionPilot() {
   } = useMarket();
 
   const { portfolio, setPortfolio, isDemo, isSaving, updateStrategy, saveHoldings, degradedMode, targetSource } = usePortfolio();
+  const currentStrategy = React.useMemo(() => getStrat(portfolio.strategy), [portfolio.strategy]);
+  const annualExpRet = currentStrategy?.annualRet?.base || 0.08;
 
-  // 리스크 지표 (KPI 스트립용)
-  const s = getStrat(portfolio.strategy);
-  const annualExpRet = s?.annualRet?.base || 0.08;
-  const riskMetrics = estimateRiskMetrics(portfolio.holdings, RISK_DATA, annualExpRet);
-  const sortinoResult = estimateSortino(annualExpRet, riskMetrics.vol);
-  const cvarResult = estimateCVaR(riskMetrics.vol);
-  // 칼마: 수익률 / |MDD| (고통 대비 얼마나 벌었나)
+  // 리스크 지표 (KPI 스트립용) - 연산 최적화
+  const report = React.useMemo(() => {
+    return estimateRiskMetrics(portfolio.holdings, RISK_DATA, annualExpRet);
+  }, [portfolio.holdings, annualExpRet]);
+
+  const riskMetrics = report;
+  const sortinoResult = React.useMemo(() => estimateSortino(annualExpRet, riskMetrics.vol), [annualExpRet, riskMetrics.vol]);
+  const cvarResult = React.useMemo(() => estimateCVaR(riskMetrics.vol), [riskMetrics.vol]);
+  
   const mddVal = portfolio.mdd || 0;
-  const calmar = mddVal !== 0 ? (annualExpRet * 100) / Math.abs(mddVal) : 0;
+  const calmar = React.useMemo(() => (mddVal !== 0 ? (annualExpRet * 100) / Math.abs(mddVal) : 0), [annualExpRet, mddVal]);
 
   // 전략 변경 핸들러
   const handleSelectStrategy = (id) => {
@@ -91,7 +96,12 @@ export default function PensionPilot() {
               VIX {vixLoading ? "…" : (vixError ? "Err" : (vix?.toFixed(1) || "…"))}
               {vixUpdatedAt && !vixError && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>({vixSource})</span>}
             </Badge>
-            <Btn sm onClick={() => setTab("settings")}>{user ? "설정" : "로그인"}</Btn>
+            <Btn sm onClick={() => {
+              setTab("settings");
+              if (!user) setRequestedSubTab("account");
+            }}>
+              {user ? "설정" : "로그인"}
+            </Btn>
           </div>
         </div>
       </div>
@@ -140,7 +150,7 @@ export default function PensionPilot() {
             avgCorrelation={avgCorrelation} corrUpdatedAt={corrUpdatedAt} corrLoading={corrLoading} onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
             degradedMode={degradedMode} targetSource={targetSource}
             fearGreed={fearGreed} yieldSpread={yieldSpread} unemployment={unemployment}
-            signalsLoading={signalsLoading} onRefreshSignals={fetchMarketSignals}
+            signalsLoading={signalsLoading} signalsError={signalsError} onRefreshSignals={fetchMarketSignals}
           />
         )}
 
@@ -171,7 +181,7 @@ export default function PensionPilot() {
           />
         )}
 
-        {tab === "settings" && (
+         {tab === "settings" && (
           <SettingsPanel
             portfolio={portfolio}
             setPortfolio={setPortfolio}
@@ -184,6 +194,8 @@ export default function PensionPilot() {
             signUp={signUp}
             logout={logout}
             isSaving={isSaving}
+            initialSubTab={requestedSubTab}
+            onSubTabHandled={() => setRequestedSubTab(null)}
           />
         )}
       </div>

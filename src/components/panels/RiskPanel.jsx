@@ -35,14 +35,22 @@ export default function RiskPanel({ portfolio }) {
       try {
         const promises = holdings.map(async h => {
            const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
-           // type 파라미터는 kis-history를 위해 사용
-           const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
-           if (!res.ok) return null;
-           const json = await res.json();
-           return json;
+           try {
+             const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
+             if (!res.ok) return null;
+             return await res.json();
+           } catch (e) {
+             console.warn(`History fetch failed for ${h.code}:`, e.message);
+             return null;
+           }
         });
-        const results = await Promise.all(promises);
-        const validData = results.filter(d => d && d.prices && d.prices.length > 5);
+        
+        const results = await Promise.allSettled(promises);
+        const validData = results
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => r.value)
+          .filter(d => d.prices && d.prices.length >= 2);
+        
         if (isMounted) setHistoricalData(validData);
       } catch (e) {
         console.error("리스크 패널 히스토리 로드 실패:", e.message);
@@ -57,6 +65,7 @@ export default function RiskPanel({ portfolio }) {
 
   const annualExpRet = s?.annualRet?.base || 0.08;
   const report = generateRiskReport(holdings, annualExpRet, period, historicalData);
+  const validHistoryCount = historicalData?.length || 0;
 
   // MDD 차트를 위한 데이터 가공 (누적 수익률 및 낙폭)
   const chartData = [];
@@ -125,6 +134,21 @@ export default function RiskPanel({ portfolio }) {
       </div>
 
       {loadingHistory && <div style={{ fontSize: 12, padding: 10, color: "var(--text-dim)" }}>실시간 가격 데이터를 수집중입니다...</div>}
+      {!loadingHistory && (
+        <div style={{ fontSize: 11, padding: "8px 10px", marginBottom: 12, borderRadius: 8, background: "var(--bg-main)", color: "var(--text-dim)", lineHeight: 1.6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+            <span>
+              계산 기준: {report.calcMode === "realized" ? `실현 데이터 기반 (${validHistoryCount}개 종목 가격 반영)` : "자산군 평균값 추정 기반"}
+              {report.calcMode !== "realized" && " · KIS 과거 시세가 부족하거나 조회 실패 시 추정치로 표시됩니다."}
+            </span>
+            {holdings.length > validHistoryCount && (
+              <span style={{ color: "var(--alert-warn-color)", fontWeight: 500 }}>
+                제외된 자산: {holdings.filter(h => !historicalData?.find(d => d.ticker === h.code)).map(h => h.etf || h.code || "현금").join(", ")}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MDD 차트 (실현 데이터가 있을 경우) */}
       {!loadingHistory && chartData.length > 0 && (
