@@ -119,7 +119,7 @@ export function generateReportHTML({ portfolio, vix, vixSource, vixUpdatedAt, vi
     <header>
       <h2>${month} 전문 연금 실무 보고서</h2>
       <p style="margin:5px 0 0">수신: 연금 투자자 귀하 | 작성: 연금 포트폴리오 파일럿 Pro</p>
-      <p style="margin:3px 0 0;font-size:11px;color:#888">생성 시각: ${now.toLocaleString('ko-KR')} | 데이터 출처: ${vixSource || '—'} | 신뢰등급: ${dataMeta?.confidenceGrade || '—'}</p>
+      <p style="margin:3px 0 0;font-size:11px;color:#888">생성 시각: ${now.toLocaleString('ko-KR')} | 신뢰등급: ${dataMeta?.confidenceGrade || '—'}</p>
     </header>
     
     ${warningsHTML}
@@ -140,8 +140,7 @@ export function generateReportHTML({ portfolio, vix, vixSource, vixUpdatedAt, vi
 
     <h3>2. 전략 및 리스크 현황</h3>
     <p>적용 전략: <strong>${s.name}</strong> (${s.level}) / 계좌 유형: <strong>${portfolio.accountType}</strong><br>
-    시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}<br>
-    <small style="color:#666">데이터 출처: ${vixError ? `⚠️ ${vixError} (캐시 사용 중)` : `${vixSource} (${vixUpdatedAt ? new Date(vixUpdatedAt).toLocaleString() : "—"})`}</small></p>
+    시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}</p>
 
     <h3>3. 자산 클래스별 상세 분석</h3>
     <table><thead><tr><th>자산명</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>

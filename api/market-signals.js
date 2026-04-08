@@ -192,32 +192,40 @@ export default async function handler(req, res) {
 
   const fredKey = process.env.FRED_API_KEY;
 
-  // 3개를 병렬 조회 (하나가 실패해도 나머지는 정상 반환)
-  const [fearGreed, yieldCurve, unemployment] = await Promise.all([
-    fetchFearAndGreed(),
-    fetchYieldSpread(fredKey),
-    fetchUnemploymentRate(fredKey),
-  ]);
+  try {
+    // 3개를 병렬 조회 (하나가 실패해도 나머지는 정상 반환)
+    // 개별 fetch 시그널 타임아웃 외에도 Promise.all 전체에 대한 타임아웃 고려 시도
+    const [fearGreed, yieldCurve, unemployment] = await Promise.all([
+      fetchFearAndGreed(),
+      fetchYieldSpread(fredKey),
+      fetchUnemploymentRate(fredKey),
+    ]);
 
-  // 복합 점수 계산 (0~8)
-  let compositeScore = 0;
-  // VIX는 클라이언트에서 이미 보유하므로 여기서는 F&G + 수익률곡선만 합산
-  if (fearGreed.score !== null) {
-    if (fearGreed.score <= 20) compositeScore += 3;
-    else if (fearGreed.score <= 40) compositeScore += 2;
-    else if (fearGreed.score >= 75) compositeScore += 0; // 탐욕 시 가산점 없음
-    else compositeScore += 1;
-  }
-  if (yieldCurve.spread !== null) {
-    if (yieldCurve.spread < 0) compositeScore += 2;
-    else if (yieldCurve.spread < 0.5) compositeScore += 1;
-  }
+    // 복합 점수 계산 (0~8)
+    let compositeScore = 0;
+    if (fearGreed.score !== null) {
+      if (fearGreed.score <= 20) compositeScore += 3;
+      else if (fearGreed.score <= 40) compositeScore += 2;
+      else if (fearGreed.score >= 75) compositeScore += 0;
+      else compositeScore += 1;
+    }
+    if (yieldCurve.spread !== null) {
+      if (yieldCurve.spread < 0) compositeScore += 2;
+      else if (yieldCurve.spread < 0.5) compositeScore += 1;
+    }
 
-  return res.status(200).set(corsHeaders()).json({
-    fearGreed,
-    yieldCurve,
-    unemployment,
-    compositeScore,
-    fetchedAt: new Date().toISOString(),
-  });
+    return res.status(200).set(corsHeaders()).json({
+      fearGreed,
+      yieldCurve,
+      unemployment,
+      compositeScore,
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("Global Market Signals Error:", e.message);
+    return res.status(500).set(corsHeaders()).json({
+      error: e.message,
+      fetchedAt: new Date().toISOString(),
+    });
+  }
 }

@@ -96,10 +96,15 @@ export default function PensionPilot() {
               VIX {vixLoading ? "…" : (vixError ? "Err" : (vix?.toFixed(1) || "…"))}
               {vixUpdatedAt && !vixError && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>({vixSource})</span>}
             </Badge>
-            <Btn sm onClick={() => {
-              setTab("settings");
-              if (!user) setRequestedSubTab("account");
-            }}>
+            <Btn 
+              sm 
+              primary={!user} 
+              onClick={() => {
+                setTab("settings");
+                if (!user) setRequestedSubTab("account");
+              }}
+              style={{ minWidth: 70 }}
+            >
               {user ? "설정" : "로그인"}
             </Btn>
           </div>

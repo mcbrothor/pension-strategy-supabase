@@ -465,10 +465,10 @@ export default function EntryPanel({ portfolio, onSave, krEtfs = [], tickerMap =
              <div style={{ textAlign: "center", padding: "1rem" }}>
                 <div style={{ fontSize: "24px", marginBottom: "10px" }}>📊</div>
                 <div style={{ fontWeight: 700, color: "var(--accent-main)", marginBottom: "4px" }}>
-                  {importLoading ? "파일을 분석 중입니다..." : "CSV 자산 내역 가져오기"}
+                  {importLoading ? "파일을 분석 중입니다..." : "보유내역 CSV 업로드"}
                 </div>
                 <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
-                  증권사에서 다운로드한 보유내역 CSV 파일을 업로드하세요.
+                  MTS에서 다운로드한 보유내역 CSV 파일을 업로드하여 포트폴리오를 자동 갱신하세요.
                 </div>
                 <input 
                   type="file" 

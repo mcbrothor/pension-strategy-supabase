@@ -10,23 +10,34 @@ async function getAccessToken() {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) return cachedToken;
 
-  const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "client_credentials",
-      appkey: process.env.KIS_APP_KEY,
-      appsecret: process.env.KIS_APP_SECRET
-    })
-  });
-  
-  const data = await res.json();
-  if (data.access_token) {
-    cachedToken = data.access_token;
-    tokenExpiry = now + (data.expires_in - 60) * 1000;
-    return cachedToken;
+async function getAccessToken() {
+  const now = Date.now();
+  if (cachedToken && now < tokenExpiry) return cachedToken;
+  try {
+    const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "client_credentials",
+        appkey: process.env.KIS_APP_KEY,
+        appsecret: process.env.KIS_APP_SECRET
+      })
+    });
+    
+    const data = await res.json();
+    if (data.access_token) {
+      cachedToken = data.access_token;
+      tokenExpiry = now + (data.expires_in - 60) * 1000;
+      console.log("KIS Token Refreshed (History). Next expiry:", new Date(tokenExpiry).toLocaleString());
+      return cachedToken;
+    } else {
+      console.error("KIS Token Error (History):", data.error_description || data.msg1 || "Unknown error");
+      throw new Error(data.msg1 || "Failed to get KIS access token");
+    }
+  } catch (e) {
+    console.error("KIS Token Exception (History):", e.message);
+    throw e;
   }
-  throw new Error(data.msg1 || "Failed to get KIS access token");
 }
 
 export default async function handler(req, res) {

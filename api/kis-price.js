@@ -23,9 +23,14 @@ async function getAccessToken() {
     if (data.access_token) {
       cachedToken = data.access_token;
       tokenExpiry = now + (data.expires_in - 60) * 1000;
+      console.log("KIS Token Refreshed. Next expiry:", new Date(tokenExpiry).toLocaleString());
       return cachedToken;
+    } else {
+      console.error("KIS Token Error:", data.error_description || "Unknown error");
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("KIS Token Exception:", e.message);
+  }
   return null;
 }
 
@@ -88,11 +93,15 @@ export default async function handler(req, res) {
         const body = await pRes.json();
         if (body.output?.stck_prpr) {
           result = { price: Number(body.output.stck_prpr), name: body.output.hts_kor_isnm, source: "KIS" };
+        } else {
+          console.warn(`KIS Domestic Search No Result [${ticker}]:`, body.msg1 || body.msg_cd);
         }
       }
+    } else {
+      console.error("KIS Access Token is NULL - Check environment variables.");
     }
   } catch (e) {
-    console.error("KIS Proxy Fail:", e.message);
+    console.error("KIS Proxy Exception:", e.message);
   }
 
   // 2. KIS 실패 시 Yahoo Fallback
