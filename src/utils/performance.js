@@ -23,7 +23,8 @@ export function formatPercentValue(value) {
 }
 
 export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet, now = new Date()) {
-  const costTotal = holdings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
+  const holdingsCostTotal = holdings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
+  const costTotal = Number(portfolio?.principalTotal) > 0 ? Number(portfolio.principalTotal) : holdingsCostTotal;
   const unrealizedPnl = costTotal > 0 ? total - costTotal : null;
   const unrealizedReturn = costTotal > 0 ? (unrealizedPnl / costTotal) * 100 : null;
 

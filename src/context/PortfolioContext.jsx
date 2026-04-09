@@ -5,6 +5,24 @@ import { DEMO_PORTFOLIO, STRATEGIES } from '../constants/index.js';
 import { computeTargets } from '../services/momentumEngine.js';
 
 const PortfolioContext = createContext();
+const PRINCIPAL_STORAGE_PREFIX = 'portfolio_principal_total';
+
+function getPrincipalStorageKey(userId) {
+  return `${PRINCIPAL_STORAGE_PREFIX}:${userId || 'demo'}`;
+}
+
+function readStoredPrincipalTotal(userId) {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(getPrincipalStorageKey(userId));
+  if (raw == null || raw === '') return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function writeStoredPrincipalTotal(userId, value) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(getPrincipalStorageKey(userId), String(Number(value) || 0));
+}
 
 /**
  * 전략 composition으로부터 기본 target 맵을 생성하는 헬퍼
@@ -163,11 +181,19 @@ export function PortfolioProvider({ children }) {
       });
 
       const total = mappedHoldings.reduce((sum, h) => sum + h.amt, 0);
+      const holdingsPrincipalTotal = mappedHoldings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
+      const storedPrincipalTotal = readStoredPrincipalTotal(user.id);
+      const principalTotal = storedPrincipalTotal != null ? storedPrincipalTotal : holdingsPrincipalTotal;
+
+      if (storedPrincipalTotal == null && holdingsPrincipalTotal > 0) {
+        writeStoredPrincipalTotal(user.id, holdingsPrincipalTotal);
+      }
 
       setPortfolio({
         ...DEMO_PORTFOLIO,
         strategy: strategyId,
         total: total,
+        principalTotal,
         holdings: mappedHoldings,
         history: (snapshots || []).map(s => ({
           date: s.date,
@@ -256,6 +282,15 @@ export function PortfolioProvider({ children }) {
     }
   };
 
+  const savePrincipalTotal = async (value) => {
+    const normalized = Math.max(0, Number(value) || 0);
+    writeStoredPrincipalTotal(user?.id, normalized);
+    setPortfolio(prev => ({
+      ...prev,
+      principalTotal: normalized
+    }));
+  };
+
   const updateStrategy = async (strategyId) => {
     const newStrat = STRATEGIES.find(it => it.id === strategyId);
 
@@ -302,7 +337,11 @@ export function PortfolioProvider({ children }) {
   useEffect(() => {
     if (user) loadPortfolio();
     else {
-      setPortfolio(DEMO_PORTFOLIO);
+      const storedPrincipalTotal = readStoredPrincipalTotal(null);
+      setPortfolio({
+        ...DEMO_PORTFOLIO,
+        principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
+      });
       setIsDemo(true);
     }
   }, [user]);
@@ -316,6 +355,7 @@ export function PortfolioProvider({ children }) {
       isDemo, 
       loadPortfolio, 
       saveHoldings, 
+      savePrincipalTotal,
       updateStrategy,
       fetchMomentumTargets, // 미리보기용 노출
       degradedMode,

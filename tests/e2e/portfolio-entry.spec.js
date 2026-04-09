@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+﻿import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,19 +26,20 @@ test.describe("Portfolio Entry Flows", () => {
 
     const before = await page.getByTestId("holdings-row").count();
 
+    await page.getByTestId("portfolio-principal-input").fill("50000");
+    await page.getByTestId("manual-name-input").click();
     await page.getByTestId("manual-name-input").fill("E2E MOCK");
     await page.getByTestId("manual-code-input").fill("999998");
     await page.getByTestId("manual-qty-input").fill("2");
     await page.getByTestId("manual-price-input").fill("10000");
-    await page.getByTestId("manual-principal-input").fill("18000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
     await expect(page.getByTestId("holdings-table")).toContainText("E2E MOCK");
     await expect(page.getByTestId("holdings-table")).toContainText("999998");
     await expect(page.getByTestId("holdings-table")).toContainText("마지막 업데이트");
-    await expect(page.getByTestId("holdings-table")).toContainText("1만");
-    await expect(page.getByTestId("holdings-table")).toContainText("원금 대비 수익률");
+    await expect(page.getByTestId("portfolio-principal-summary")).toContainText("5만");
+    await expect(page.getByTestId("portfolio-principal-return")).toContainText("+");
 
     await page.getByTestId("tab-daily").click();
     await expect(page.locator("body")).toContainText("E2E MOCK");
@@ -94,9 +95,9 @@ test.describe("Portfolio Entry Flows", () => {
     expect(download.suggestedFilename()).toBe("holdings_template.csv");
 
     const csv = [
-      `"asset_class","name","ticker","qty","price","amount","cost_amount"`,
-      `"미국주식","E2E 테스트 ETF","999999","3","20000","60000","58000"`,
-      `"현금MMF","E2E 테스트 현금","CASH-E2E","0","0","150000","150000"`,
+      '"asset_class","name","ticker","qty","price","amount","cost_amount"',
+      '"미국주식","E2E 테스트 ETF","999999","3","20000","60000","58000"',
+      '"현금MMF","E2E 테스트 현금","CASH-E2E","0","0","150000","150000"',
     ].join("\n");
 
     const csvPath = path.join(os.tmpdir(), `holdings-e2e-${Date.now()}.csv`);
@@ -109,3 +110,4 @@ test.describe("Portfolio Entry Flows", () => {
     await expect(page.getByTestId("holdings-table")).toContainText("999999");
   });
 });
+

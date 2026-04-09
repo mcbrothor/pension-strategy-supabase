@@ -17,7 +17,7 @@ const SUB_TABS = [
 ];
 
 export default function SettingsPanel({
-  portfolio, setPortfolio, saveHoldings, krEtfs, tickerMap, masterError,
+  portfolio, setPortfolio, saveHoldings, savePrincipalTotal, krEtfs, tickerMap, masterError,
   user, login, signUp, logout, isSaving, initialSubTab, onSubTabHandled
 }) {
   const [subTab, setSubTab] = useState("assets");
@@ -52,6 +52,7 @@ export default function SettingsPanel({
           <EntryPanel
             portfolio={portfolio}
             onSave={saveHoldings}
+            onPrincipalTotalChange={savePrincipalTotal}
             onRowsChange={(nextRows) =>
               setPortfolio((prev) => ({
                 ...prev,

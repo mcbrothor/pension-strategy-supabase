@@ -107,7 +107,6 @@ function makeEmptyItem() {
     qty: 0,
     price: 0,
     amt: 0,
-    costAmt: 0,
     updatedAt: null,
   };
 }
@@ -115,7 +114,6 @@ function makeEmptyItem() {
 function mergeHolding(existingItem, incomingItem) {
   const mergedQty = (Number(existingItem.qty) || 0) + (Number(incomingItem.qty) || 0);
   const mergedAmt = (Number(existingItem.amt) || 0) + (Number(incomingItem.amt) || 0);
-  const mergedCostAmt = (Number(existingItem.costAmt) || 0) + (Number(incomingItem.costAmt) || 0);
 
   return {
     ...existingItem,
@@ -127,7 +125,6 @@ function mergeHolding(existingItem, incomingItem) {
     qty: incomingItem.cls === CASH_ASSET_CLASS ? 0 : mergedQty,
     price: Number(incomingItem.price) || Number(existingItem.price) || 0,
     amt: incomingItem.cls === CASH_ASSET_CLASS ? mergedAmt : mergedAmt,
-    costAmt: mergedCostAmt,
     updatedAt: incomingItem.updatedAt || existingItem.updatedAt || null,
   };
 }
@@ -309,9 +306,6 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
     }
   };
 
-  const pnlPct =
-    Number(form.costAmt) > 0 ? (((Number(form.amt) || 0) - Number(form.costAmt)) / Number(form.costAmt)) * 100 : null;
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <Card style={{ width: "95%", maxWidth: 520 }}>
@@ -363,14 +357,6 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
             </div>
           )}
 
-          <div>
-            <label style={labelStyle}>원금</label>
-            <input type="number" style={inputStyle} value={form.costAmt || ""} onChange={(e) => updateForm("costAmt", e.target.value)} data-testid="edit-principal-input" placeholder="투입 원금 입력" />
-            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
-              {pnlPct == null ? "원금을 입력하면 원금 대비 수익률을 계산합니다." : `원금 대비 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`}
-            </div>
-          </div>
-
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
             <Btn onClick={onClose}>취소</Btn>
             <Btn primary onClick={() => onSave(form)}>
@@ -390,7 +376,7 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
   );
 }
 
-export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [], tickerMap = {}, masterError }) {
+export default function EntryPanel({ portfolio, onSave, onRowsChange, onPrincipalTotalChange, krEtfs = [], tickerMap = {}, masterError }) {
   const [rows, setRows] = useState(portfolio.holdings || []);
   const [newItem, setNewItem] = useState(makeEmptyItem());
   const [loading, setLoading] = useState(false);
@@ -398,10 +384,15 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
   const [importResults, setImportResults] = useState([]);
   const [importLoading, setImportLoading] = useState(false);
   const [updatedTickers, setUpdatedTickers] = useState(new Set());
+  const [principalInput, setPrincipalInput] = useState(String(Number(portfolio.principalTotal) || ""));
 
   useEffect(() => {
     setRows(portfolio.holdings || []);
   }, [portfolio.holdings]);
+
+  useEffect(() => {
+    setPrincipalInput(String(Number(portfolio.principalTotal) || ""));
+  }, [portfolio.principalTotal]);
 
   const syncRows = (nextRows) => {
     setRows(nextRows);
@@ -409,6 +400,9 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
   };
 
   const totalAmt = rows.reduce((sum, row) => sum + (Number(row.amt) || 0), 0);
+  const principalTotal = Number(portfolio.principalTotal) || 0;
+  const totalPnl = principalTotal > 0 ? totalAmt - principalTotal : null;
+  const totalPnlPct = totalPnl != null ? (totalPnl / principalTotal) * 100 : null;
 
   const sortedAlloc = useMemo(() => {
     const grouped = {};
@@ -657,10 +651,34 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
               </div>
 
               <div>
-                <label style={labelStyle}>원금</label>
-                <input type="number" style={inputStyle} value={newItem.costAmt || ""} onChange={(e) => updateNewItem("costAmt", e.target.value)} data-testid="manual-principal-input" placeholder="투입 원금 입력" />
+                <label style={labelStyle}>연금 총 원금</label>
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={principalInput}
+                  onChange={(e) => setPrincipalInput(e.target.value)}
+                  onBlur={() => onPrincipalTotalChange?.(principalInput)}
+                  data-testid="portfolio-principal-input"
+                  placeholder="이 연금에 투입한 총 원금"
+                />
                 <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
-                  원금을 입력하면 자산 목록에서 원금 대비 손익과 수익률을 추적합니다.
+                  개별 종목이 아니라 연금 전체 기준 원금입니다. 리포트와 전체 수익률 계산에 사용됩니다.
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px" }}>총 원금</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700 }} data-testid="portfolio-principal-summary">{fmt(principalTotal)}</div>
+                </div>
+                <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px" }}>전체 원금 대비 수익률</div>
+                  <div
+                    style={{ fontSize: "18px", fontWeight: 700, color: totalPnl == null ? "var(--text-dim)" : totalPnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}
+                    data-testid="portfolio-principal-return"
+                  >
+                    {totalPnl == null ? "-" : `${totalPnl >= 0 ? "+" : "-"}${fmt(Math.abs(totalPnl))} (${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(1)}%)`}
+                  </div>
                 </div>
               </div>
 
@@ -704,16 +722,12 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
                     <th style={{ width: 120 }}>자산군</th>
                     <th style={{ textAlign: "right", width: 100 }}>수량</th>
                     <th style={{ textAlign: "right", width: 120 }}>현재가</th>
-                    <th style={{ textAlign: "right", width: 140 }}>원금</th>
                     <th style={{ textAlign: "right", width: 150 }}>평가금액</th>
-                    <th style={{ textAlign: "right", width: 140 }}>평가손익</th>
                     <th style={{ textAlign: "center", width: 110 }}>관리</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row, index) => {
-                    const pnl = Number(row.costAmt) > 0 ? Number(row.amt) - Number(row.costAmt) : null;
-                    const pnlPct = pnl != null ? (pnl / Number(row.costAmt)) * 100 : null;
                     const isUpdated = updatedTickers.has(row.code || row.etf);
 
                     return (
@@ -737,18 +751,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
                         </td>
                         <td style={{ textAlign: "right", padding: "16px 0" }}>{fmt(row.qty)}</td>
                         <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>{fmt(row.price)}</td>
-                        <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>
-                          {Number(row.costAmt) > 0 ? fmt(row.costAmt) : "-"}
-                        </td>
                         <td style={{ textAlign: "right", padding: "16px 0", fontWeight: 700 }}>{fmt(row.amt)}</td>
-                        <td style={{ textAlign: "right", padding: "16px 0", color: pnl == null ? "var(--text-dim)" : pnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}>
-                          {pnl == null ? "원금 필요" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
-                          {pnl != null && (
-                            <div style={{ fontSize: "10px", marginTop: "4px", color: "var(--text-dim)" }}>
-                              원금 대비 수익률
-                            </div>
-                          )}
-                        </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
                           <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
                             <Btn sm onClick={() => setEditTarget({ item: row, idx: index })}>
