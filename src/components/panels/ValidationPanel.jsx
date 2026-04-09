@@ -15,11 +15,7 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   
-  const total = portfolio.total || 0;
-  const holdings = portfolio.holdings.map(h => ({
-    ...h,
-    target: total > 0 ? Math.round((h.amt || 0) / total * 1000) / 10 : 0
-  }));
+  const holdings = portfolio.holdings.map(h => ({ ...h }));
 
   const runValidation = async () => {
     if (!holdings || holdings.length === 0) return;

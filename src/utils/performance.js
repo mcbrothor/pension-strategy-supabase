@@ -1,6 +1,8 @@
 export function parseHistoryDate(dateValue, now = new Date()) {
   if (!dateValue) return null;
-  if (dateValue === "오늘") return now;
+
+  const normalized = String(dateValue).trim().toLowerCase();
+  if (normalized === "today" || normalized === "\uc624\ub298") return now;
 
   const match = String(dateValue).match(/^(\d{1,2})\/(\d{1,2})$/);
   if (match) {

@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabase.js";
  * 주문계획 패널 — 리밸런싱 판단 + 주문 제안서
  * 기존 RebalanceJudge의 3단계 워크플로우를 통합합니다.
  */
-export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation }) {
+export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation, fearGreed, yieldSpread }) {
   const [checked, setChecked] = useState({});
 
   const z = getZone(vix);
@@ -23,7 +23,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
 
   // ActionTicket 생성 (주문 제안서 핵심)
   const tickets = generateActionTickets(assetClassResults, {
-    vix, stopLoss: portfolio.stopLoss, mdd: portfolio.mdd, mddLimit: portfolio.mddLimit,
+    vix, fearGreed, yieldSpread, stopLoss: portfolio.stopLoss, mdd: portfolio.mdd, mddLimit: portfolio.mddLimit,
     accountType: portfolio.accountType, irpRiskRatio
   });
 

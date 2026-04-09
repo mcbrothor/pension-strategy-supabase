@@ -1,35 +1,162 @@
-const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
-  ? "https://openapi.koreainvestment.com:9443" 
+﻿const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real"
+  ? "https://openapi.koreainvestment.com:9443"
   : "https://openapivts.koreainvestment.com:29443";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const STALE_GRACE_MS = 24 * 60 * 60 * 1000;
 const cache = globalThis.__VIX_CACHE__ || (globalThis.__VIX_CACHE__ = {});
 
-// 내부 토큰 관리 (utils/kis-auth.js가 없을 경우를 대비한 내장형)
 let cachedToken = null;
 let tokenExpiry = 0;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url, options = {}, retries = 2, retryDelayMs = 400) {
+  let lastErr = null;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+
+      if (res.status === 429 || res.status >= 500) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        if (i < retries) {
+          await sleep(retryDelayMs * (i + 1));
+          continue;
+        }
+      }
+
+      throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+      if (i < retries) {
+        await sleep(retryDelayMs * (i + 1));
+        continue;
+      }
+    }
+  }
+  throw lastErr || new Error("fetch failed");
+}
 
 async function getInternalToken() {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) return cachedToken;
 
-  const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
+  const res = await fetchWithRetry(`${API_BASE_URL}/oauth2/tokenP`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       grant_type: "client_credentials",
       appkey: process.env.KIS_APP_KEY,
-      appsecret: process.env.KIS_APP_SECRET
-    })
-  });
-  
+      appsecret: process.env.KIS_APP_SECRET,
+    }),
+    signal: AbortSignal.timeout(7000),
+  }, 1, 300);
+
   const data = await res.json();
-  if (data.access_token) {
-    cachedToken = data.access_token;
-    tokenExpiry = now + (data.expires_in - 60) * 1000;
-    return cachedToken;
+  if (!data.access_token) throw new Error(data.msg1 || data.error_description || "Failed to get KIS token");
+
+  cachedToken = data.access_token;
+  tokenExpiry = now + (data.expires_in - 60) * 1000;
+  return cachedToken;
+}
+
+async function fetchFromKis() {
+  const token = await getInternalToken();
+  const url = `${API_BASE_URL}/uapi/overseas-stock/v1/quotations/inquire-price?AUTH=""&EXCD=NYS&SYMB=VIX`;
+
+  const fetchByTr = async (trId) => {
+    const res = await fetchWithRetry(url, {
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        appkey: process.env.KIS_APP_KEY,
+        appsecret: process.env.KIS_APP_SECRET,
+        tr_id: trId,
+      },
+      signal: AbortSignal.timeout(7000),
+    }, 1, 300);
+
+    const body = await res.json();
+    const price = Number(body?.output?.last);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  };
+
+  const p1 = await fetchByTr("HDFS00000300");
+  if (p1) return { vix: p1, source: "KIS" };
+
+  const p2 = await fetchByTr("HHDFS00000300");
+  if (p2) return { vix: p2, source: "KIS(Fallback)" };
+
+  throw new Error("KIS returned empty price");
+}
+
+async function fetchFromYahoo() {
+  const endpoints = [
+    "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1m&range=1d",
+    "https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d",
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetchWithRetry(endpoint, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(7000),
+      }, 1, 400);
+
+      const d = await res.json();
+      const result = d?.chart?.result?.[0];
+      const meta = result?.meta;
+      const val = Number(meta?.regularMarketPrice || meta?.previousClose);
+      if (Number.isFinite(val) && val > 0) return { vix: val, source: "Yahoo" };
+
+      const closeArr = result?.indicators?.quote?.[0]?.close || [];
+      const last = Number([...closeArr].reverse().find((x) => Number.isFinite(x)));
+      if (Number.isFinite(last) && last > 0) return { vix: last, source: "Yahoo" };
+    } catch {
+      // try next endpoint
+    }
   }
-  throw new Error(data.msg1 || "Failed to get KIS token");
+
+  throw new Error("Yahoo returned empty price");
+}
+
+async function fetchFromCboe() {
+  const url = "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv";
+  const res = await fetchWithRetry(url, { signal: AbortSignal.timeout(8000) }, 1, 400);
+  const csv = await res.text();
+  const lines = csv.trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error("CBOE csv empty");
+
+  const last = lines[lines.length - 1].split(",");
+  const close = Number(last[last.length - 1]);
+  if (!Number.isFinite(close) || close <= 0) throw new Error("CBOE close parse failed");
+
+  return { vix: close, source: "CBOE(DailyClose)" };
+}
+
+async function fetchFromStooq() {
+  const url = "https://stooq.com/q/l/?s=%5Evix&i=d";
+  const res = await fetchWithRetry(url, { signal: AbortSignal.timeout(8000) }, 1, 400);
+  const text = (await res.text()).trim();
+  const row = text.split(/\r?\n/).at(-1);
+  const cols = row?.split(",") || [];
+  const close = Number(cols[6]);
+  if (!Number.isFinite(close) || close <= 0) throw new Error("Stooq close parse failed");
+  return { vix: close, source: "Stooq" };
+}
+
+function buildCachedResponse() {
+  if (!cache.vix) return null;
+  const age = Date.now() - new Date(cache.vix.updatedAt).getTime();
+  if (!Number.isFinite(age) || age > STALE_GRACE_MS) return null;
+
+  return {
+    ok: true,
+    ...cache.vix,
+    source: `${cache.vix.source || "Cache"}(Stale)`,
+    stale: true,
+  };
 }
 
 export default async function handler(req, res) {
@@ -41,87 +168,40 @@ export default async function handler(req, res) {
 
   const now = Date.now();
   if (cache.vix && cache.vix.expiresAt > now) {
-    return res.status(200).json({ ok: true, ...cache.vix });
+    return res.status(200).json({ ok: true, ...cache.vix, stale: false });
   }
 
-  let result = null;
-  let errors = [];
+  const errors = [];
+  const sources = [
+    ["KIS", fetchFromKis],
+    ["Yahoo", fetchFromYahoo],
+    ["CBOE", fetchFromCboe],
+    ["Stooq", fetchFromStooq],
+  ];
 
-  // 1. KIS API (Priority)
-  try {
-    const token = await getInternalToken();
-    
-    // VIX는 KIS에서 '지수'로 분류됨. 전용 엔드포인트 시도.
-    // TR_ID: HDFS00000300 (해외지수 현재가)
-    const url = `${API_BASE_URL}/uapi/overseas-stock/v1/quotations/inquire-price?AUTH=""&EXCD=NYS&SYMB=VIX`;
-    
-    const fetchVix = async (trId) => {
-      const r = await fetch(url, {
-        headers: {
-          "content-type": "application/json",
-          "authorization": `Bearer ${token}`,
-          "appkey": process.env.KIS_APP_KEY,
-          "appsecret": process.env.KIS_APP_SECRET,
-          "tr_id": trId
-        },
-        signal: AbortSignal.timeout(5000)
-      });
-      return await r.json();
-    };
-
-    // 지수 TR 시도
-    let body = await fetchVix("HDFS00000300");
-    if (body.output && body.output.last) {
-      result = { vix: Number(body.output.last), source: "KIS" };
-    } else {
-      // 주식 TR 시도 (일부 환경에서 종목처럼 조회되는 경우 대비)
-      body = await fetchVix("HHDFS00000300");
-      if (body.output && body.output.last) {
-        result = { vix: Number(body.output.last), source: "KIS(Fallback)" };
-      } else {
-        errors.push(`KIS failure: ${body.msg1 || "No output"}`);
-      }
-    }
-  } catch (e) {
-    errors.push(`KIS exception: ${e.message}`);
-  }
-
-  // 2. Yahoo Finance Fallback
-  if (!result) {
+  for (const [label, fn] of sources) {
     try {
-      const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1m&range=1d';
-      const yRes = await fetch(yahooUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1" },
-        signal: AbortSignal.timeout(5000)
-      });
-      
-      if (yRes.ok) {
-        const d = await yRes.json();
-        const meta = d?.chart?.result?.[0]?.meta;
-        const val = meta?.regularMarketPrice || meta?.previousClose;
-        if (val) {
-          result = { vix: val, source: "Yahoo" };
-        } else {
-          errors.push("Yahoo data empty");
-        }
-      } else {
-        errors.push(`Yahoo HTTP ${yRes.status}`);
-      }
+      const result = await fn();
+      const payload = {
+        ...result,
+        updatedAt: new Date().toISOString(),
+        expiresAt: Date.now() + CACHE_TTL_MS,
+      };
+      cache.vix = payload;
+      return res.status(200).json({ ok: true, ...payload, stale: false });
     } catch (e) {
-      errors.push(`Yahoo exception: ${e.message}`);
+      errors.push(`${label}: ${e.message}`);
     }
   }
 
-  if (result) {
-    result.updatedAt = new Date().toISOString();
-    cache.vix = { ...result, expiresAt: now + CACHE_TTL_MS };
-    return res.status(200).json({ ok: true, ...cache.vix });
+  const stale = buildCachedResponse();
+  if (stale) {
+    return res.status(200).json(stale);
   }
 
-  // 모든 시도 실패 시
-  return res.status(500).json({ 
-    ok: false, 
+  return res.status(500).json({
+    ok: false,
     error: "VIX 조회 실패",
-    details: errors.join(" | ")
+    details: errors.join(" | "),
   });
 }
