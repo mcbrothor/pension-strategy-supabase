@@ -6,6 +6,7 @@ import {
   calculateCompositeSplit,
   generateActionTickets,
 } from "../src/services/rebalanceEngine.js";
+import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 
 const now = new Date("2026-04-08T00:00:00+09:00");
 
@@ -84,6 +85,15 @@ const now = new Date("2026-04-08T00:00:00+09:00");
 {
   assert.equal(calculateCompositeSplit(36, 18, -0.2), 7);
   assert.equal(calculateCompositeSplit(16, 80, 1.0), 1);
+}
+
+{
+  const csv = buildHoldingsCsvTemplate();
+  const parsed = parseHoldingsCsvText(csv);
+  assert.equal(parsed.length >= 2, true);
+  assert.equal(parsed[0].code, "360750");
+  assert.equal(parsed[0].qty, 15);
+  assert.equal(parsed[0].amt, 180000);
 }
 
 console.log("smoke tests passed");

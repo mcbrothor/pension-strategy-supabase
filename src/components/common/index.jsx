@@ -40,10 +40,11 @@ export const Badge = ({ children, c, bg }) => (
   </span>
 );
 
-export const Btn = ({ children, onClick, primary, danger, sm, style, disabled }) => (
+export const Btn = ({ children, onClick, primary, danger, sm, style, disabled, ...rest }) => (
   <button 
     onClick={onClick} 
     disabled={disabled}
+    {...rest}
     style={{
       padding: sm ? "5px 12px" : "8px 20px",
       border: `0.5px solid ${primary || danger ? "transparent" : "var(--border-glass)"}`,

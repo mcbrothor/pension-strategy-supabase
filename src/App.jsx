@@ -148,6 +148,7 @@ export default function PensionPilot() {
               key={t.id}
               className={`workflow-tab ${tab === t.id ? "active" : ""}`}
               onClick={() => setTab(t.id)}
+              data-testid={`tab-${t.id}`}
             >
               <span className="tab-number">{t.num}</span>
               <span>{t.icon} {t.label}</span>

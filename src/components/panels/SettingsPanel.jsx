@@ -39,6 +39,7 @@ export default function SettingsPanel({
             sm
             primary={subTab === t.id}
             onClick={() => setSubTab(t.id)}
+            data-testid={`settings-subtab-${t.id}`}
           >
             {t.icon} {t.label}
           </Btn>
@@ -51,6 +52,13 @@ export default function SettingsPanel({
           <EntryPanel
             portfolio={portfolio}
             onSave={saveHoldings}
+            onRowsChange={(nextRows) =>
+              setPortfolio((prev) => ({
+                ...prev,
+                holdings: nextRows,
+                total: nextRows.reduce((sum, item) => sum + (Number(item.amt) || 0), 0),
+              }))
+            }
             krEtfs={krEtfs}
             tickerMap={tickerMap}
             masterError={masterError}
