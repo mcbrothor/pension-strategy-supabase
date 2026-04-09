@@ -95,6 +95,25 @@ function makeEmptyItem() {
   };
 }
 
+function mergeHolding(existingItem, incomingItem) {
+  const mergedQty = (Number(existingItem.qty) || 0) + (Number(incomingItem.qty) || 0);
+  const mergedAmt = (Number(existingItem.amt) || 0) + (Number(incomingItem.amt) || 0);
+  const mergedCostAmt = (Number(existingItem.costAmt) || 0) + (Number(incomingItem.costAmt) || 0);
+
+  return {
+    ...existingItem,
+    ...incomingItem,
+    id: existingItem.id || incomingItem.id,
+    etf: incomingItem.etf || existingItem.etf,
+    code: incomingItem.code || existingItem.code,
+    cls: incomingItem.cls || existingItem.cls,
+    qty: incomingItem.cls === CASH_ASSET_CLASS ? 0 : mergedQty,
+    price: Number(incomingItem.price) || Number(existingItem.price) || 0,
+    amt: incomingItem.cls === CASH_ASSET_CLASS ? mergedAmt : mergedAmt,
+    costAmt: mergedCostAmt,
+  };
+}
+
 function decodeCsvBuffer(buffer) {
   const utf8Text = new TextDecoder("utf-8").decode(buffer);
   if (!utf8Text.includes("\uFFFD")) return utf8Text;
@@ -444,8 +463,21 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
     }
     if (Number(nextItem.amt) <= 0) return alert("평가금액은 0보다 커야 합니다.");
 
-    const nextRows = [...rows, { ...nextItem }];
+    const existingIndex = rows.findIndex(
+      (row) =>
+        (nextItem.code && row.code === nextItem.code) ||
+        (!nextItem.code && nextItem.etf && row.etf === nextItem.etf)
+    );
+
+    const nextRows =
+      existingIndex === -1
+        ? [...rows, { ...nextItem }]
+        : rows.map((row, index) => (index === existingIndex ? mergeHolding(row, nextItem) : row));
+
+    const updatedKey = nextItem.code || nextItem.etf;
     syncRows(nextRows);
+    setUpdatedTickers(new Set(updatedKey ? [updatedKey] : []));
+    setTimeout(() => setUpdatedTickers(new Set()), 5000);
     setNewItem(makeEmptyItem());
     await onSave(nextRows);
   };

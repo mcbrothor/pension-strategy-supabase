@@ -198,7 +198,8 @@ export function PortfolioProvider({ children }) {
       const idsToDelete = existingDBIds.filter(id => !incomingIds.includes(id));
       
       if (idsToDelete.length > 0) {
-        await supabase.from('holdings').delete().in('id', idsToDelete);
+        const { error } = await supabase.from('holdings').delete().in('id', idsToDelete);
+        if (error) throw error;
       }
       
       const upsertItems = items
@@ -220,7 +221,8 @@ export function PortfolioProvider({ children }) {
         });
 
       if (upsertItems.length > 0) {
-        await supabase.from('holdings').upsert(upsertItems, { onConflict: 'id' });
+        const { error } = await supabase.from('holdings').upsert(upsertItems, { onConflict: 'id' });
+        if (error) throw error;
       }
 
       const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
@@ -235,13 +237,14 @@ export function PortfolioProvider({ children }) {
         weights[k] = Math.round(weights[k] * 10) / 10;
       });
 
-      await supabase.from('snapshots').insert({
+      const { error: snapshotError } = await supabase.from('snapshots').insert({
         user_id: user.id,
         date: saveDate,
         strategy_id: portfolio.strategy,
         total_amt: total,
         weights: weights
       });
+      if (snapshotError) throw snapshotError;
 
       await loadPortfolio();
     } catch (e) {

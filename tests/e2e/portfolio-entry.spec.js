@@ -15,7 +15,7 @@ test.describe("Portfolio Entry Flows", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ ticker: "360750", name: "E2E MOCK", price: 10000 }),
+        body: JSON.stringify({ ticker: "999998", name: "E2E MOCK", price: 10000 }),
       });
     });
 
@@ -26,12 +26,18 @@ test.describe("Portfolio Entry Flows", () => {
 
     const before = await page.getByTestId("holdings-row").count();
 
-    await page.getByTestId("manual-code-input").fill("360750");
+    await page.getByTestId("manual-name-input").fill("E2E MOCK");
+    await page.getByTestId("manual-code-input").fill("999998");
     await page.getByTestId("manual-qty-input").fill("2");
     await page.getByTestId("manual-price-input").fill("10000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
+    await expect(page.getByTestId("holdings-table")).toContainText("E2E MOCK");
+    await expect(page.getByTestId("holdings-table")).toContainText("999998");
+
+    await page.getByTestId("tab-daily").click();
+    await expect(page.locator("body")).toContainText("E2E MOCK");
   });
 
   test("manual add resolves ticker from typed name", async ({ page }) => {
@@ -49,6 +55,26 @@ test.describe("Portfolio Entry Flows", () => {
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
     await expect(page.getByTestId("holdings-table")).toContainText("292150");
+  });
+
+  test("manual add merges into an existing holding instead of disappearing", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByTestId("tab-settings").click();
+    await page.getByTestId("settings-subtab-assets").click();
+
+    const beforeCount = await page.getByTestId("holdings-row").count();
+    const totalSummary = page.getByText(/자산 합계/);
+    const beforeTotalText = await totalSummary.textContent();
+
+    await page.getByTestId("manual-code-input").fill("360750");
+    await page.getByTestId("manual-qty-input").fill("1");
+    await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-add-button").click();
+
+    await expect(page.getByTestId("holdings-row")).toHaveCount(beforeCount);
+    await expect(page.getByTestId("holdings-table")).toContainText("360750");
+    await expect(totalSummary).not.toHaveText(beforeTotalText || "");
   });
 
   test("template download and csv upload are reflected in holdings", async ({ page }) => {
