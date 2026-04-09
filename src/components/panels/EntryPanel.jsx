@@ -57,6 +57,32 @@ function getAssetClassLabel(assetClass) {
   return ASSET_CLASS_LABELS.get(assetClass) || assetClass || "기타";
 }
 
+function normalizeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^0-9a-zA-Z가-힣]/g, "");
+}
+
+function resolveAssetByName(name, tickerMap = {}, krEtfs = []) {
+  if (!name) return null;
+
+  if (tickerMap[name]) return tickerMap[name];
+
+  const normalizedInput = normalizeName(name);
+  if (!normalizedInput) return null;
+
+  const exact = krEtfs.find((asset) => normalizeName(asset.name) === normalizedInput);
+  if (exact) return exact;
+
+  const partialMatches = krEtfs.filter((asset) => {
+    const normalizedAssetName = normalizeName(asset.name);
+    return normalizedAssetName.includes(normalizedInput) || normalizedInput.includes(normalizedAssetName);
+  });
+
+  return partialMatches.length === 1 ? partialMatches[0] : null;
+}
+
 function makeEmptyItem() {
   return {
     etf: "",
@@ -360,9 +386,13 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
   const updateNewItem = (key, value) => {
     setNewItem((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "etf" && tickerMap[value]) {
-        next.code = tickerMap[value].ticker;
-        next.cls = tickerMap[value].assetClass || next.cls;
+      if (key === "etf") {
+        const resolved = resolveAssetByName(value, tickerMap, krEtfs);
+        if (resolved) {
+          next.etf = resolved.name;
+          next.code = resolved.ticker;
+          next.cls = resolved.assetClass || next.cls;
+        }
       }
       if (next.cls === CASH_ASSET_CLASS) {
         next.qty = 0;
@@ -398,11 +428,23 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
   };
 
   const handleAddItem = async () => {
-    if (!newItem.cls) return alert("자산군을 선택하세요.");
-    if (newItem.cls !== CASH_ASSET_CLASS && !newItem.code) return alert("티커를 입력하세요.");
-    if (Number(newItem.amt) <= 0) return alert("평가금액은 0보다 커야 합니다.");
+    const resolved = newItem.code ? null : resolveAssetByName(newItem.etf, tickerMap, krEtfs);
+    const nextItem = resolved
+      ? {
+          ...newItem,
+          etf: resolved.name,
+          code: resolved.ticker,
+          cls: resolved.assetClass || newItem.cls,
+        }
+      : newItem;
 
-    const nextRows = [...rows, { ...newItem }];
+    if (!nextItem.cls) return alert("자산군을 선택하세요.");
+    if (nextItem.cls !== CASH_ASSET_CLASS && !nextItem.code) {
+      return alert("종목명 자동완성 또는 티커 입력으로 종목을 확인해주세요.");
+    }
+    if (Number(nextItem.amt) <= 0) return alert("평가금액은 0보다 커야 합니다.");
+
+    const nextRows = [...rows, { ...nextItem }];
     syncRows(nextRows);
     setNewItem(makeEmptyItem());
     await onSave(nextRows);
@@ -535,7 +577,14 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
 
                 <div>
                   <label style={labelStyle}>종목명 (자동완성 추천)</label>
-                  <input style={inputStyle} value={newItem.etf} onChange={(e) => updateNewItem("etf", e.target.value)} list="etf-list-main" placeholder="종목명을 검색하세요" />
+                  <input
+                    style={inputStyle}
+                    value={newItem.etf}
+                    onChange={(e) => updateNewItem("etf", e.target.value)}
+                    list="etf-list-main"
+                    data-testid="manual-name-input"
+                    placeholder="종목명을 검색하세요"
+                  />
                 </div>
 
                 {isNewCash ? (

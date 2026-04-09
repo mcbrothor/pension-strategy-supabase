@@ -34,6 +34,23 @@ test.describe("Portfolio Entry Flows", () => {
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
   });
 
+  test("manual add resolves ticker from typed name", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByTestId("tab-settings").click();
+    await page.getByTestId("settings-subtab-assets").click();
+
+    const before = await page.getByTestId("holdings-row").count();
+
+    await page.getByTestId("manual-name-input").fill("코리아top10");
+    await page.getByTestId("manual-qty-input").fill("2");
+    await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-add-button").click();
+
+    await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
+    await expect(page.getByTestId("holdings-table")).toContainText("292150");
+  });
+
   test("template download and csv upload are reflected in holdings", async ({ page }) => {
     await page.goto("/");
 
