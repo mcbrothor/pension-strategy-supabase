@@ -57,6 +57,22 @@ function getAssetClassLabel(assetClass) {
   return ASSET_CLASS_LABELS.get(assetClass) || assetClass || "기타";
 }
 
+function formatUpdatedAt(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function normalizeName(value) {
   return String(value || "")
     .toLowerCase()
@@ -92,6 +108,7 @@ function makeEmptyItem() {
     price: 0,
     amt: 0,
     costAmt: 0,
+    updatedAt: null,
   };
 }
 
@@ -111,6 +128,7 @@ function mergeHolding(existingItem, incomingItem) {
     price: Number(incomingItem.price) || Number(existingItem.price) || 0,
     amt: incomingItem.cls === CASH_ASSET_CLASS ? mergedAmt : mergedAmt,
     costAmt: mergedCostAmt,
+    updatedAt: incomingItem.updatedAt || existingItem.updatedAt || null,
   };
 }
 
@@ -346,10 +364,10 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
           )}
 
           <div>
-            <label style={labelStyle}>매입원가 / 원금</label>
-            <input type="number" style={inputStyle} value={form.costAmt || ""} onChange={(e) => updateForm("costAmt", e.target.value)} placeholder="선택 입력" />
+            <label style={labelStyle}>원금</label>
+            <input type="number" style={inputStyle} value={form.costAmt || ""} onChange={(e) => updateForm("costAmt", e.target.value)} data-testid="edit-principal-input" placeholder="투입 원금 입력" />
             <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
-              {pnlPct == null ? "원가를 입력하면 평가손익을 계산합니다." : `현재 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`}
+              {pnlPct == null ? "원금을 입력하면 원금 대비 수익률을 계산합니다." : `원금 대비 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`}
             </div>
           </div>
 
@@ -447,6 +465,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
   };
 
   const handleAddItem = async () => {
+    const updatedAt = new Date().toISOString();
     const resolved = newItem.code ? null : resolveAssetByName(newItem.etf, tickerMap, krEtfs);
     const nextItem = resolved
       ? {
@@ -454,8 +473,9 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
           etf: resolved.name,
           code: resolved.ticker,
           cls: resolved.assetClass || newItem.cls,
+          updatedAt,
         }
-      : newItem;
+      : { ...newItem, updatedAt };
 
     if (!nextItem.cls) return alert("자산군을 선택하세요.");
     if (nextItem.cls !== CASH_ASSET_CLASS && !nextItem.code) {
@@ -484,7 +504,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
 
   const handleEditSave = async (item) => {
     const nextRows = [...rows];
-    nextRows[editTarget.idx] = item;
+    nextRows[editTarget.idx] = { ...item, updatedAt: new Date().toISOString() };
     syncRows(nextRows);
     setEditTarget({ item: null, idx: -1 });
     await onSave(nextRows);
@@ -530,6 +550,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
 
   const handleBatchAdd = async (items) => {
     if (!window.confirm(`총 ${items.length}개 종목을 반영할까요?`)) return;
+    const updatedAt = new Date().toISOString();
 
     const merged = {};
     rows.forEach((row) => {
@@ -539,7 +560,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
     const nextUpdated = new Set();
     items.forEach((item) => {
       const key = item.code || item.etf;
-      merged[key] = item;
+      merged[key] = { ...item, updatedAt };
       nextUpdated.add(key);
     });
 
@@ -636,10 +657,10 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
               </div>
 
               <div>
-                <label style={labelStyle}>매입원가 / 원금 (선택)</label>
-                <input type="number" style={inputStyle} value={newItem.costAmt || ""} onChange={(e) => updateNewItem("costAmt", e.target.value)} placeholder="평가손익 계산용" />
+                <label style={labelStyle}>원금</label>
+                <input type="number" style={inputStyle} value={newItem.costAmt || ""} onChange={(e) => updateNewItem("costAmt", e.target.value)} data-testid="manual-principal-input" placeholder="투입 원금 입력" />
                 <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
-                  MTS의 매입금액을 입력하면 리포트와 자산 목록에서 원가 기준 손익률을 계산합니다.
+                  원금을 입력하면 자산 목록에서 원금 대비 손익과 수익률을 추적합니다.
                 </div>
               </div>
 
@@ -683,6 +704,7 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
                     <th style={{ width: 120 }}>자산군</th>
                     <th style={{ textAlign: "right", width: 100 }}>수량</th>
                     <th style={{ textAlign: "right", width: 120 }}>현재가</th>
+                    <th style={{ textAlign: "right", width: 140 }}>원금</th>
                     <th style={{ textAlign: "right", width: 150 }}>평가금액</th>
                     <th style={{ textAlign: "right", width: 140 }}>평가손익</th>
                     <th style={{ textAlign: "center", width: 110 }}>관리</th>
@@ -702,6 +724,11 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
                             {isUpdated ? <Badge c="#fff" bg="#0f9d58">업데이트</Badge> : null}
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: "4px" }}>{row.code || "CASH"}</div>
+                          {formatUpdatedAt(row.updatedAt) && (
+                            <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: "4px" }}>
+                              마지막 업데이트 {formatUpdatedAt(row.updatedAt)}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: "16px 0" }}>
                           <Badge c={ASSET_COLORS[row.cls] || "#333"} bg={`${ASSET_COLORS[row.cls] || "#888"}22`}>
@@ -710,9 +737,17 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
                         </td>
                         <td style={{ textAlign: "right", padding: "16px 0" }}>{fmt(row.qty)}</td>
                         <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>{fmt(row.price)}</td>
+                        <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>
+                          {Number(row.costAmt) > 0 ? fmt(row.costAmt) : "-"}
+                        </td>
                         <td style={{ textAlign: "right", padding: "16px 0", fontWeight: 700 }}>{fmt(row.amt)}</td>
                         <td style={{ textAlign: "right", padding: "16px 0", color: pnl == null ? "var(--text-dim)" : pnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}>
-                          {pnl == null ? "원가 필요" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                          {pnl == null ? "원금 필요" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                          {pnl != null && (
+                            <div style={{ fontSize: "10px", marginTop: "4px", color: "var(--text-dim)" }}>
+                              원금 대비 수익률
+                            </div>
+                          )}
                         </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
                           <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>

@@ -30,11 +30,15 @@ test.describe("Portfolio Entry Flows", () => {
     await page.getByTestId("manual-code-input").fill("999998");
     await page.getByTestId("manual-qty-input").fill("2");
     await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-principal-input").fill("18000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
     await expect(page.getByTestId("holdings-table")).toContainText("E2E MOCK");
     await expect(page.getByTestId("holdings-table")).toContainText("999998");
+    await expect(page.getByTestId("holdings-table")).toContainText("마지막 업데이트");
+    await expect(page.getByTestId("holdings-table")).toContainText("1만");
+    await expect(page.getByTestId("holdings-table")).toContainText("원금 대비 수익률");
 
     await page.getByTestId("tab-daily").click();
     await expect(page.locator("body")).toContainText("E2E MOCK");
@@ -75,6 +79,7 @@ test.describe("Portfolio Entry Flows", () => {
     await expect(page.getByTestId("holdings-row")).toHaveCount(beforeCount);
     await expect(page.getByTestId("holdings-table")).toContainText("360750");
     await expect(totalSummary).not.toHaveText(beforeTotalText || "");
+    await expect(page.getByTestId("holdings-table")).toContainText("마지막 업데이트");
   });
 
   test("template download and csv upload are reflected in holdings", async ({ page }) => {

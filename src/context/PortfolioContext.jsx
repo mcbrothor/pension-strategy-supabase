@@ -157,6 +157,7 @@ export function PortfolioProvider({ children }) {
           price: Number(it.current_price) || 0,
           amt: Number(it.amount) || 0,
           costAmt: Number(it.cost_amt) || 0,
+          updatedAt: it.updated_at || null,
           cur: 0 
         };
       });
