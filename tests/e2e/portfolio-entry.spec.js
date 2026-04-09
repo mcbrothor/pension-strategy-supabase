@@ -32,6 +32,7 @@ test.describe("Portfolio Entry Flows", () => {
     await page.getByTestId("manual-code-input").fill("999998");
     await page.getByTestId("manual-qty-input").fill("2");
     await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-cost-input").fill("18000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
@@ -56,6 +57,7 @@ test.describe("Portfolio Entry Flows", () => {
     await page.getByTestId("manual-name-input").fill("코리아top10");
     await page.getByTestId("manual-qty-input").fill("2");
     await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-cost-input").fill("18000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(before + 1);
@@ -75,6 +77,7 @@ test.describe("Portfolio Entry Flows", () => {
     await page.getByTestId("manual-code-input").fill("360750");
     await page.getByTestId("manual-qty-input").fill("1");
     await page.getByTestId("manual-price-input").fill("10000");
+    await page.getByTestId("manual-cost-input").fill("9000");
     await page.getByTestId("manual-add-button").click();
 
     await expect(page.getByTestId("holdings-row")).toHaveCount(beforeCount);
