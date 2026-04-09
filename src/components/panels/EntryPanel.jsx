@@ -1,10 +1,9 @@
-﻿import React, { useState, useEffect, useMemo } from "react";
-import { Card, ST, Badge, Btn } from "../common/index.jsx";
-import { fmt, fmtP } from "../../utils/formatters.js";
-import { ASSET_COLORS, ASSET_CLASSES } from "../../constants/index.js";
-import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../../utils/holdingsCsv.js";
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { Badge, Btn, Card, ST } from "../common/index.jsx";
+import { fmt } from "../../utils/formatters.js";
+import { ASSET_CLASSES, ASSET_COLORS } from "../../constants/index.js";
+import { buildHoldingsCsvTemplate, parseHoldingsCsvText } from "../../utils/holdingsCsv.js";
 
-// -- Shared Styles for Premium Inputs --
 const inputStyle = {
   width: "100%",
   padding: "10px 14px",
@@ -16,102 +15,171 @@ const inputStyle = {
   fontFamily: "inherit",
   outline: "none",
   boxSizing: "border-box",
-  transition: "all 0.2s ease",
 };
 
 const labelStyle = {
-  fontSize: "10.5px",
+  fontSize: "11px",
   fontWeight: 700,
   color: "var(--text-dim)",
   display: "block",
   marginBottom: "8px",
   letterSpacing: "0.03em",
-  textTransform: "uppercase",
-  opacity: 0.8
 };
 
-// -- Import Result Modal Component (CSV/Manual Batch) --
-const ImportResultModal = ({ isOpen, onClose, results, onConfirm, tickerMap, currentRows }) => {
-  if (!isOpen) return null;
-  const [data, setData] = useState(results.map(r => ({
-    ...r,
-    cls: tickerMap[r.etf]?.assetClass || (tickerMap[r.code]?.assetClass) || "誘멸뎅二쇱떇"
-  })));
+const ASSET_CLASS_DISPLAY_NAMES = [
+  "미국주식",
+  "선진국주식",
+  "신흥국주식",
+  "국내주식",
+  "미국단기채권",
+  "미국중기채권",
+  "물가연동채권",
+  "회사채",
+  "하이일드채권",
+  "신흥국채권",
+  "글로벌채권",
+  "금",
+  "원자재",
+  "부동산리츠",
+  "현금MMF",
+];
 
-  // -- Diff Analysis --
-  const diffSummary = useMemo(() => {
-    let news = 0, updates = 0, totals = data.length;
-    data.forEach(item => {
-      const existing = currentRows.find(r => (r.code && r.code === item.code) || r.etf === item.etf);
-      if (!existing) news++;
-      else if (existing.qty !== item.qty || existing.amt !== item.amt) updates++;
+const ASSET_CLASS_LABELS = new Map(
+  ASSET_CLASSES.map((value, index) => [value, ASSET_CLASS_DISPLAY_NAMES[index] || value])
+);
+
+const DEFAULT_ASSET_CLASS = ASSET_CLASSES[0];
+const CASH_ASSET_CLASS =
+  ASSET_CLASSES.find((item) => ASSET_CLASS_LABELS.get(item) === "현금MMF") ||
+  ASSET_CLASSES[ASSET_CLASSES.length - 1];
+
+function getAssetClassLabel(assetClass) {
+  return ASSET_CLASS_LABELS.get(assetClass) || assetClass || "기타";
+}
+
+function makeEmptyItem() {
+  return {
+    etf: "",
+    code: "",
+    cls: DEFAULT_ASSET_CLASS,
+    qty: 0,
+    price: 0,
+    amt: 0,
+    costAmt: 0,
+  };
+}
+
+function decodeCsvBuffer(buffer) {
+  const utf8Text = new TextDecoder("utf-8").decode(buffer);
+  if (!utf8Text.includes("\uFFFD")) return utf8Text;
+
+  try {
+    return new TextDecoder("euc-kr").decode(buffer);
+  } catch {
+    return utf8Text;
+  }
+}
+
+function downloadCsvTemplate() {
+  const blob = new Blob(["\uFEFF" + buildHoldingsCsvTemplate()], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "holdings_template.csv";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+function ImportResultModal({ isOpen, results, currentRows, onClose, onConfirm }) {
+  const [rows, setRows] = useState(results);
+
+  useEffect(() => {
+    setRows(results);
+  }, [results]);
+
+  const summary = useMemo(() => {
+    let added = 0;
+    let updated = 0;
+
+    rows.forEach((item) => {
+      const existing = currentRows.find((row) => (row.code && row.code === item.code) || row.etf === item.etf);
+      if (!existing) added += 1;
+      else updated += 1;
     });
-    return { news, updates, totals };
-  }, [data, currentRows]);
 
-  const update = (idx, key, val) => {
-    const next = [...data];
-    next[idx][key] = val;
-    if (key === "qty" || key === "price") {
-      next[idx].amt = (Number(next[idx].qty) || 0) * (Number(next[idx].price) || 0);
-    }
-    setData(next);
+    return { added, updated, total: rows.length };
+  }, [currentRows, rows]);
+
+  if (!isOpen) return null;
+
+  const updateCell = (index, key, value) => {
+    setRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [key]: value };
+      if (key === "qty" || key === "price") {
+        next[index].amt = (Number(next[index].qty) || 0) * (Number(next[index].price) || 0);
+      }
+      return next;
+    });
   };
 
-  const handleRemove = (idx) => setData(data.filter((_, i) => i !== idx));
-
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(12px)" }}>
-      <Card style={{ width: "95%", maxWidth: 800, padding: "2.5rem", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ marginBottom: "1.5rem" }}>
-          <ST>CSV ?먯궛 ?댁뿭 寃??</ST>
-          <div style={{ fontSize: "13px", color: "var(--text-dim)", marginTop: "4px" }}>
-            ?뚯씪?먯꽌 異붿텧???곗씠?곗엯?덈떎. ?뺥솗?섏? ?딆? ?뺣낫???섏젙 ??[?ы듃?대━?ㅼ뿉 諛섏쁺]???뚮윭二쇱꽭??
-          </div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}>
+      <Card style={{ width: "95%", maxWidth: 860, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <ST>CSV 업로드 검토</ST>
+        <div style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "1rem" }}>
+          업로드한 보유내역을 반영하기 전에 종목 분류와 수량을 확인할 수 있습니다.
         </div>
 
-        {/* Diff Summary Box */}
-        <div style={{ display: "flex", gap: "10px", marginBottom: "1.5rem", padding: "1rem", background: "rgba(37, 99, 235, 0.05)", borderRadius: "10px", border: "1px solid rgba(37, 99, 235, 0.1)" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "11px", color: "var(--color-primary)", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>蹂寃??ы빆 ?붿빟</div>
-            <div style={{ fontSize: "14px", fontWeight: 600 }}>
-              珥?{diffSummary.totals}媛?以?<span style={{ color: "var(--color-primary)" }}>{diffSummary.news}媛??좉퇋</span>, <span style={{ color: "var(--color-warning)" }}>{diffSummary.updates}媛??낅뜲?댄듃</span> ?덉젙
-            </div>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-dim)", display: "flex", alignItems: "center" }}>
-            諛섏쁺?섏떆寃좎뒿?덇퉴? "??瑜??꾨Ⅴ硫??꾩옱 ?ы듃?대━?ㅼ뿉 蹂묓빀?⑸땲??
-          </div>
+        <div style={{ display: "flex", gap: "12px", marginBottom: "1rem", flexWrap: "wrap" }}>
+          <Badge c="#0c447c" bg="#e6f1fb">총 {summary.total}건</Badge>
+          <Badge c="#27500a" bg="#eaf3de">신규 {summary.added}건</Badge>
+          <Badge c="#633806" bg="#faeeda">업데이트 {summary.updated}건</Badge>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", marginBottom: "1.5rem" }}>
+        <div style={{ overflow: "auto", marginBottom: "1rem" }}>
           <table className="premium-table" data-testid="csv-preview-table">
             <thead>
               <tr>
-                <th>?먯궛援?</th>
-                <th>醫낅ぉ紐?/ ?곗빱</th>
-                <th style={{ textAlign: "right" }}>?섎웾</th>
-                <th style={{ textAlign: "right" }}>?꾩옱媛</th>
-                <th style={{ textAlign: "right" }}>?됯?湲덉븸</th>
-                <th style={{ textAlign: "center" }}>??젣</th>
+                <th>자산군</th>
+                <th>종목</th>
+                <th style={{ textAlign: "right" }}>수량</th>
+                <th style={{ textAlign: "right" }}>현재가</th>
+                <th style={{ textAlign: "right" }}>평가금액</th>
+                <th style={{ textAlign: "center" }}>관리</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((r, i) => (
-                <tr key={i}>
+              {rows.map((item, index) => (
+                <tr key={`${item.code}-${index}`}>
                   <td>
-                    <select style={{ ...inputStyle, padding: "6px" }} value={r.cls} onChange={e => update(i, "cls", e.target.value)}>
-                      {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                    <select style={{ ...inputStyle, padding: "6px 8px" }} value={item.cls} onChange={(e) => updateCell(index, "cls", e.target.value)}>
+                      {ASSET_CLASSES.map((assetClass) => (
+                        <option key={assetClass} value={assetClass}>
+                          {getAssetClassLabel(assetClass)}
+                        </option>
+                      ))}
                     </select>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{r.etf}</div>
-                    <div style={{ fontSize: "11px", opacity: 0.6 }}>{r.code}</div>
+                    <div style={{ fontWeight: 600 }}>{item.etf}</div>
+                    <div style={{ fontSize: "11px", color: "var(--text-dim)" }}>{item.code}</div>
                   </td>
-                  <td><input type="number" style={{ ...inputStyle, textAlign: "right", padding: "6px" }} value={r.qty} onChange={e => update(i, "qty", e.target.value)} /></td>
-                  <td><input type="number" style={{ ...inputStyle, textAlign: "right", padding: "6px" }} value={r.price} onChange={e => update(i, "price", e.target.value)} /></td>
-                  <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(r.amt)}</td>
+                  <td>
+                    <input type="number" style={{ ...inputStyle, textAlign: "right", padding: "6px 8px" }} value={item.qty} onChange={(e) => updateCell(index, "qty", e.target.value)} />
+                  </td>
+                  <td>
+                    <input type="number" style={{ ...inputStyle, textAlign: "right", padding: "6px 8px" }} value={item.price} onChange={(e) => updateCell(index, "price", e.target.value)} />
+                  </td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{fmt(item.amt)}</td>
                   <td style={{ textAlign: "center" }}>
-                    <Btn sm danger onClick={() => handleRemove(i)}>횞</Btn>
+                    <Btn sm danger onClick={() => setRows((prev) => prev.filter((_, rowIndex) => rowIndex !== index))}>
+                      삭제
+                    </Btn>
                   </td>
                 </tr>
               ))}
@@ -119,483 +187,460 @@ const ImportResultModal = ({ isOpen, onClose, results, onConfirm, tickerMap, cur
           </table>
         </div>
 
-        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-          <Btn style={{ padding: "10px 20px" }} onClick={onClose}>痍⑥냼</Btn>
-          <Btn primary style={{ padding: "10px 30px" }} onClick={() => onConfirm(data)} data-testid="csv-import-confirm">?ы듃?대━?ㅼ뿉 諛섏쁺?섍린</Btn>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          <Btn onClick={onClose}>취소</Btn>
+          <Btn primary data-testid="csv-import-confirm" onClick={() => onConfirm(rows)}>
+            포트폴리오에 반영
+          </Btn>
         </div>
       </Card>
     </div>
   );
-};
+}
 
-// -- Edit Modal Component --
-const EditModal = ({ item, isOpen, onClose, onSave, krEtfs, tickerMap }) => {
-  if (!isOpen) return null;
-  const [data, setData] = useState({ ...item });
+function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
+  const [form, setForm] = useState(item || makeEmptyItem());
   const [loading, setLoading] = useState(false);
-
-  const isCash = data.cls === "?꾧툑MMF";
-
-  async function fetchPrice() {
-    if (!data.code || isCash) return;
-    setLoading(true);
-    try {
-      const isDomestic = /^[0-9]/.test(data.code);
-      const url = `/api/kis-price?ticker=${data.code}${isDomestic ? "" : "&type=overseas"}`;
-      const res = await fetch(url);
-      const resData = await res.json();
-      if (!res.ok) {
-        alert("?쒖꽭 議고쉶 ?ㅽ뙣: " + (resData.error || "?????녿뒗 ?먮윭"));
-        return;
-      }
-      if (resData.price) {
-        setData(prev => {
-          const next = { ...prev, price: resData.price, amt: (prev.qty || 0) * resData.price };
-          if (resData.name && !prev.etf) next.etf = resData.name;
-          return next;
-        });
-      }
-    } catch (e) {
-      console.error(e);
-      alert("?쒖꽭 議고쉶 以??ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const update = (key, val) => {
-    setData(prev => {
-      const next = { ...prev, [key]: val };
-      if (next.cls === "?꾧툑MMF") {
-        next.qty = 0; next.price = 0;
-      } else {
-        if (key === "qty" || key === "price") {
-          next.amt = (Number(next.qty) || 0) * (Number(next.price) || 0);
-        }
-      }
-      return next;
-    });
-  };
-
-  const pnlPct = Number(data.costAmt) > 0
-    ? ((Number(data.amt) - Number(data.costAmt)) / Number(data.costAmt)) * 100
-    : null;
-
-  return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(8px)" }}>
-      <Card style={{ width: "95%", maxWidth: 480, padding: "2.5rem", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)", border: "1px solid rgba(255,255,255,0.1)" }}>
-        <div style={{ marginBottom: "2rem" }}>
-          <ST>醫낅ぉ ?뺣낫 ?섏젙</ST>
-          <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "-4px" }}>蹂댁쑀 ?먯궛???곸꽭 ?뺣낫瑜??덉쟾?섍쾶 ?뺤젙?⑸땲??</div>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-          <div>
-            <label style={labelStyle}>?먯궛援?</label>
-            <select style={inputStyle} value={data.cls} onChange={e => update("cls", e.target.value)}>
-              {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>醫낅ぉ紐?</label>
-            <input style={inputStyle} value={data.etf} onChange={e => update("etf", e.target.value)} list="etf-list-modal" placeholder="Enter asset name" />
-          </div>
-
-          {!isCash && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "10px", alignItems: "end" }}>
-              <div>
-                <label style={labelStyle}>?곗빱 / 醫낅ぉ 肄붾뱶</label>
-                <input style={{ ...inputStyle, fontFamily: "monospace" }} value={data.code} onChange={e => update("code", e.target.value)} onBlur={fetchPrice} placeholder="?? 360750" />
-              </div>
-              <Btn sm onClick={fetchPrice} style={{ height: "42px", width: "100%" }} disabled={loading}>{loading ? "..." : "?쒖꽭議고쉶"}</Btn>
-            </div>
-          )}
-
-          {!isCash ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
-              <div>
-                <label style={labelStyle}>?섎웾</label>
-                <input type="number" style={inputStyle} value={data.qty} onChange={e => update("qty", e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>?꾩옱媛 (?④?)</label>
-                <input type="number" style={inputStyle} value={data.price} onChange={e => update("price", e.target.value)} />
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label style={labelStyle}>?ㅼ젣 ?됯? 湲덉븸 (??</label>
-              <input type="number" style={{ ...inputStyle, fontWeight: 700, fontSize: "16px", border: "1px solid var(--accent-main)" }} value={data.amt} onChange={e => update("amt", e.target.value)} />
-            </div>
-          )}
-
-          <div>
-            <label style={labelStyle}>留ㅼ엯?먭? / ?먭툑 (?좏깮)</label>
-            <input
-              type="number"
-              style={inputStyle}
-              value={data.costAmt || ""}
-              onChange={e => update("costAmt", e.target.value)}
-              placeholder="Enter cost amount"
-            />
-            <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 5 }}>
-              {pnlPct != null ? `?꾩옱 ?됯??먯씡瑜?${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "?낅젰 ??蹂닿퀬?쒖쓽 ?됯??먯씡瑜?怨꾩궛??諛섏쁺?⑸땲??"}
-            </div>
-          </div>
-
-          <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <Btn style={{ padding: "12px" }} onClick={onClose}>痍⑥냼</Btn>
-            <Btn primary style={{ padding: "12px" }} onClick={() => onSave(data)}>蹂寃??ы빆 ?곸슜</Btn>
-          </div>
-        </div>
-      </Card>
-      <datalist id="etf-list-modal">
-        {krEtfs.map((it, idx) => <option key={idx} value={it.name}>{it.ticker}</option>)}
-      </datalist>
-    </div>
-  );
-};
-
-// -- Main Panel Component --
-export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [], tickerMap = {}, masterError }) {
-  const [rows, setRows] = useState(portfolio.holdings || []);
-  const [newItem, setNewItem] = useState({ etf: "", code: "", cls: "誘멸뎅二쇱떇", qty: 0, price: 0, amt: 0, costAmt: 0 });
-  const [loading, setLoading] = useState(false);
-  const [editTarget, setEditTarget] = useState({ item: null, idx: -1 });
-  const [importResults, setImportResults] = useState(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const [updatedTickers, setUpdatedTickers] = useState(new Set());
 
   useEffect(() => {
-    if (portfolio.holdings) setRows(portfolio.holdings);
-  }, [portfolio.holdings]);
+    setForm(item || makeEmptyItem());
+  }, [item]);
 
-  const syncRows = (nextRows) => {
-    setRows(nextRows);
-    if (onRowsChange) onRowsChange(nextRows);
-  };
+  if (!isOpen) return null;
 
-  const totalAmt = rows.reduce((s, h) => s + (Number(h.amt) || 0), 0);
-  const sortedAlloc = useMemo(() => {
-    const counts = {};
-    rows.forEach(r => { counts[r.cls] = (counts[r.cls] || 0) + (Number(r.amt) || 0); });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [rows]);
+  const isCash = form.cls === CASH_ASSET_CLASS;
 
-  // -- Add Logic --
-  async function fetchNewItemPrice() {
-    if (!newItem.code || newItem.cls === "?꾧툑MMF") return;
-    setLoading(true);
-    try {
-      const isDomestic = /^[0-9]/.test(newItem.code);
-      const url = `/api/kis-price?ticker=${newItem.code}${isDomestic ? "" : "&type=overseas"}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) {
-        alert("?쒖꽭 議고쉶 ?ㅽ뙣: " + (data.error || "?????녿뒗 ?먮윭"));
-        return;
+  const updateForm = (key, value) => {
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (next.cls === CASH_ASSET_CLASS) {
+        next.qty = 0;
+        next.price = 0;
       }
-      if (data.price) {
-        setNewItem(prev => {
-          const next = { ...prev, price: data.price, amt: (prev.qty || 0) * data.price };
-          if (data.name && !prev.etf) next.etf = data.name;
-          return next;
-        });
-      }
-    } catch (e) {
-      console.error(e);
-      alert("?쒖꽭 議고쉶 以??ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const updateNew = (key, val) => {
-    setNewItem(prev => {
-      const next = { ...prev, [key]: val };
-      if (key === "etf" && tickerMap[val]) {
-        const info = tickerMap[val];
-        next.code = info.ticker; next.cls = info.assetClass || next.cls;
-      }
-      if (next.cls === "?꾧툑MMF") {
-        next.qty = 0; next.price = 0;
-      } else if (key === "qty" || key === "price") {
+      if (key === "qty" || key === "price") {
         next.amt = (Number(next.qty) || 0) * (Number(next.price) || 0);
       }
       return next;
     });
   };
 
-  async function handleAddItem() {
-    if (!newItem.cls) return alert("?먯궛援곗쓣 ?좏깮?섏꽭??");
-    if (newItem.cls !== "?꾧툑MMF" && !newItem.code) return alert("醫낅ぉ 肄붾뱶 ?먮뒗 ?곗빱瑜??낅젰?섏꽭??");
-    if (Number(newItem.amt) <= 0) return alert("湲덉븸??0蹂대떎 ?ш쾶 ?낅젰?섏꽭??");
-
-    const updatedRows = [...rows, { ...newItem }];
-    syncRows(updatedRows);
-    setNewItem({ etf: "", code: "", cls: "誘멸뎅二쇱떇", qty: 0, price: 0, amt: 0, costAmt: 0 }); // reset form
-    await onSave(updatedRows);
-  }
-
-  // -- Edit Logic --
-  async function handleCompleteEdit(updatedItem) {
-    const updatedRows = [...rows];
-    updatedRows[editTarget.idx] = updatedItem;
-    syncRows(updatedRows);
-    setEditTarget({ item: null, idx: -1 });
-    await onSave(updatedRows);
-  }
-
-  // -- Delete Logic --
-  async function handleRemove(idx) {
-    if (!window.confirm("?뺣쭚 ??醫낅ぉ????젣?섏떆寃좎뒿?덇퉴?")) return;
-    const updatedRows = rows.filter((_, i) => i !== idx);
-    syncRows(updatedRows);
-    await onSave(updatedRows);
-  }
-
-  async function clearAll() {
-    if (window.confirm("紐⑤뱺 ?곗씠?곕? 珥덇린?뷀븯?쒓쿋?듬땲源?")) {
-      syncRows([]);
-      await onSave([]);
-    }
-  }
-
-  // -- CSV Import Logic --
-  function decodeCsvBuffer(buffer) {
-    const utf8Text = new TextDecoder("utf-8").decode(buffer);
-    if (!utf8Text.includes("\uFFFD")) return utf8Text;
+  const fetchPrice = async () => {
+    if (!form.code || isCash) return;
+    setLoading(true);
     try {
-      return new TextDecoder("euc-kr").decode(buffer);
-    } catch {
-      return utf8Text;
+      const isDomestic = /^[0-9]/.test(form.code);
+      const response = await fetch(`/api/kis-price?ticker=${form.code}${isDomestic ? "" : "&type=overseas"}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "시세 조회에 실패했습니다.");
+
+      setForm((prev) => ({
+        ...prev,
+        etf: prev.etf || data.name || prev.etf,
+        price: data.price,
+        amt: (Number(prev.qty) || 0) * data.price,
+      }));
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  function downloadCsvTemplate() {
-    const csv = "\uFEFF" + buildHoldingsCsvTemplate();
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "holdings_template.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
+  const pnlPct =
+    Number(form.costAmt) > 0 ? (((Number(form.amt) || 0) - Number(form.costAmt)) / Number(form.costAmt)) * 100 : null;
 
-  async function handleCsvFile(e) {
-    const file = e.target.files?.[0];
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <Card style={{ width: "95%", maxWidth: 520 }}>
+        <ST>보유 자산 수정</ST>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div>
+            <label style={labelStyle}>자산군</label>
+            <select style={inputStyle} value={form.cls} onChange={(e) => updateForm("cls", e.target.value)}>
+              {ASSET_CLASSES.map((assetClass) => (
+                <option key={assetClass} value={assetClass}>
+                  {getAssetClassLabel(assetClass)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>종목명</label>
+            <input style={inputStyle} value={form.etf} onChange={(e) => updateForm("etf", e.target.value)} list="etf-list-modal" placeholder="종목명을 입력하세요" />
+          </div>
+
+          {!isCash && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 96px", gap: "10px", alignItems: "end" }}>
+              <div>
+                <label style={labelStyle}>티커</label>
+                <input style={{ ...inputStyle, fontFamily: "monospace" }} value={form.code} onChange={(e) => updateForm("code", e.target.value)} onBlur={fetchPrice} placeholder="예: 360750" />
+              </div>
+              <Btn sm onClick={fetchPrice} disabled={loading} style={{ height: "42px" }}>
+                {loading ? "조회 중" : "시세 조회"}
+              </Btn>
+            </div>
+          )}
+
+          {isCash ? (
+            <div>
+              <label style={labelStyle}>금액</label>
+              <input type="number" style={inputStyle} value={form.amt || ""} onChange={(e) => updateForm("amt", e.target.value)} />
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={labelStyle}>수량</label>
+                <input type="number" style={inputStyle} value={form.qty || ""} onChange={(e) => updateForm("qty", e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>현재가</label>
+                <input type="number" style={inputStyle} value={form.price || ""} onChange={(e) => updateForm("price", e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label style={labelStyle}>매입원가 / 원금</label>
+            <input type="number" style={inputStyle} value={form.costAmt || ""} onChange={(e) => updateForm("costAmt", e.target.value)} placeholder="선택 입력" />
+            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
+              {pnlPct == null ? "원가를 입력하면 평가손익을 계산합니다." : `현재 수익률 ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <Btn onClick={onClose}>취소</Btn>
+            <Btn primary onClick={() => onSave(form)}>
+              저장
+            </Btn>
+          </div>
+        </div>
+      </Card>
+      <datalist id="etf-list-modal">
+        {krEtfs.map((asset) => (
+          <option key={asset.ticker} value={asset.name}>
+            {asset.ticker}
+          </option>
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [], tickerMap = {}, masterError }) {
+  const [rows, setRows] = useState(portfolio.holdings || []);
+  const [newItem, setNewItem] = useState(makeEmptyItem());
+  const [loading, setLoading] = useState(false);
+  const [editTarget, setEditTarget] = useState({ item: null, idx: -1 });
+  const [importResults, setImportResults] = useState([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [updatedTickers, setUpdatedTickers] = useState(new Set());
+
+  useEffect(() => {
+    setRows(portfolio.holdings || []);
+  }, [portfolio.holdings]);
+
+  const syncRows = (nextRows) => {
+    setRows(nextRows);
+    onRowsChange?.(nextRows);
+  };
+
+  const totalAmt = rows.reduce((sum, row) => sum + (Number(row.amt) || 0), 0);
+
+  const sortedAlloc = useMemo(() => {
+    const grouped = {};
+    rows.forEach((row) => {
+      grouped[row.cls] = (grouped[row.cls] || 0) + (Number(row.amt) || 0);
+    });
+    return Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+
+  const isNewCash = newItem.cls === CASH_ASSET_CLASS;
+
+  const updateNewItem = (key, value) => {
+    setNewItem((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === "etf" && tickerMap[value]) {
+        next.code = tickerMap[value].ticker;
+        next.cls = tickerMap[value].assetClass || next.cls;
+      }
+      if (next.cls === CASH_ASSET_CLASS) {
+        next.qty = 0;
+        next.price = 0;
+      }
+      if (key === "qty" || key === "price") {
+        next.amt = (Number(next.qty) || 0) * (Number(next.price) || 0);
+      }
+      return next;
+    });
+  };
+
+  const fetchNewItemPrice = async () => {
+    if (!newItem.code || isNewCash) return;
+    setLoading(true);
+    try {
+      const isDomestic = /^[0-9]/.test(newItem.code);
+      const response = await fetch(`/api/kis-price?ticker=${newItem.code}${isDomestic ? "" : "&type=overseas"}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "시세 조회에 실패했습니다.");
+
+      setNewItem((prev) => ({
+        ...prev,
+        etf: prev.etf || data.name || prev.etf,
+        price: data.price,
+        amt: (Number(prev.qty) || 0) * data.price,
+      }));
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddItem = async () => {
+    if (!newItem.cls) return alert("자산군을 선택하세요.");
+    if (newItem.cls !== CASH_ASSET_CLASS && !newItem.code) return alert("티커를 입력하세요.");
+    if (Number(newItem.amt) <= 0) return alert("평가금액은 0보다 커야 합니다.");
+
+    const nextRows = [...rows, { ...newItem }];
+    syncRows(nextRows);
+    setNewItem(makeEmptyItem());
+    await onSave(nextRows);
+  };
+
+  const handleEditSave = async (item) => {
+    const nextRows = [...rows];
+    nextRows[editTarget.idx] = item;
+    syncRows(nextRows);
+    setEditTarget({ item: null, idx: -1 });
+    await onSave(nextRows);
+  };
+
+  const handleRemove = async (index) => {
+    if (!window.confirm("선택한 종목을 삭제할까요?")) return;
+    const nextRows = rows.filter((_, rowIndex) => rowIndex !== index);
+    syncRows(nextRows);
+    await onSave(nextRows);
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm("보유 자산을 모두 삭제할까요?")) return;
+    syncRows([]);
+    await onSave([]);
+  };
+
+  const handleCsvFile = async (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     setImportLoading(true);
     const reader = new FileReader();
     reader.readAsArrayBuffer(file);
-    reader.onload = (evt) => {
+    reader.onload = (loadEvent) => {
       try {
-        const text = decodeCsvBuffer(evt.target.result);
+        const text = decodeCsvBuffer(loadEvent.target.result);
         const parsed = parseHoldingsCsvText(text, tickerMap);
-
-        if (parsed.length === 0) throw new Error("No valid holdings rows found.");
+        if (parsed.length === 0) throw new Error("유효한 보유내역이 없습니다.");
         setImportResults(parsed);
-      } catch (err) {
-        alert("CSV parse failed: " + err.message);
+      } catch (error) {
+        alert(`CSV 파싱 실패: ${error.message}`);
+      } finally {
+        setImportLoading(false);
       }
-      setImportLoading(false);
     };
     reader.onerror = () => {
-      alert("File read failed");
       setImportLoading(false);
+      alert("파일 읽기에 실패했습니다.");
     };
-  }
+  };
 
-  function handleBatchAdd(items) {
+  const handleBatchAdd = async (items) => {
+    if (!window.confirm(`총 ${items.length}개 종목을 반영할까요?`)) return;
 
-    if (!window.confirm(`珥?${items.length}媛쒖쓽 ??ぉ???쇱씠釉??ы듃?대━?ㅼ뿉 諛섏쁺?섏떆寃좎뒿?덇퉴?`)) return;
-
-    const existingMap = {};
-    const newUpdated = new Set();
-    
-    rows.forEach(r => { existingMap[r.code || r.etf] = r; });
-
-    items.forEach(item => {
-      const key = item.code || item.etf;
-      existingMap[key] = item;
-      newUpdated.add(key);
+    const merged = {};
+    rows.forEach((row) => {
+      merged[row.code || row.etf] = row;
     });
 
-    const updatedList = Object.values(existingMap);
-    syncRows(updatedList);
-    onSave(updatedList);
-    setImportResults(null);
+    const nextUpdated = new Set();
+    items.forEach((item) => {
+      const key = item.code || item.etf;
+      merged[key] = item;
+      nextUpdated.add(key);
+    });
 
-    setUpdatedTickers(newUpdated);
-    setTimeout(() => setUpdatedTickers(new Set()), 5000); // 5珥???媛뺤“ ?쒓굅
-  }
+    const nextRows = Object.values(merged);
+    syncRows(nextRows);
+    setImportResults([]);
+    setUpdatedTickers(nextUpdated);
+    setTimeout(() => setUpdatedTickers(new Set()), 5000);
+    await onSave(nextRows);
+  };
 
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.5rem", alignItems: "start" }}>
-        {/* Left Section: CSV Import & Add Form & Holding Table */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          
-          {/* CSV Import Upload Zone */}
-          <Card style={{ border: "2px dashed var(--accent-main)", opacity: importLoading ? 0.6 : 1, transition: "all 0.3s ease", position: "relative", background: "rgba(37, 99, 235, 0.02)" }}>
-             <div style={{ textAlign: "center", padding: "1rem" }}>
-                <div style={{ fontSize: "24px", marginBottom: "10px" }}>?뱤</div>
-                <div style={{ fontWeight: 700, color: "var(--accent-main)", marginBottom: "4px" }}>
-                  {importLoading ? "Parsing CSV..." : "Upload Holdings CSV"}
-                </div>
-                <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
-                  MTS?먯꽌 ?ㅼ슫濡쒕뱶??蹂댁쑀?댁뿭 CSV ?뚯씪???낅줈?쒗븯???ы듃?대━?ㅻ? ?먮룞 媛깆떊?섏꽭??
-                </div>
-                <div style={{ marginTop: "10px", position: "relative", zIndex: 2 }}>
-                  <Btn sm onClick={downloadCsvTemplate} data-testid="csv-template-download">Download CSV Template</Btn>
-                </div>
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
-                  onChange={handleCsvFile}
-                  data-testid="csv-upload-input"
-                  disabled={importLoading}
-                />
-             </div>
-             {importLoading && (
-               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.05)", borderRadius: "12px" }}>
-                  <div className="spinner"></div>
-               </div>
-             )}
+          <Card style={{ border: "2px dashed var(--accent-main)", position: "relative", background: "rgba(37, 99, 235, 0.02)", opacity: importLoading ? 0.7 : 1 }}>
+            <div style={{ textAlign: "center", padding: "1rem" }}>
+              <div style={{ fontSize: "24px", marginBottom: "10px" }}>보유내역</div>
+              <div style={{ fontWeight: 700, color: "var(--accent-main)", marginBottom: "6px" }}>
+                {importLoading ? "CSV 분석 중..." : "보유내역 CSV 업로드"}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-dim)", lineHeight: 1.6 }}>
+                MTS에서 받은 CSV 파일을 업로드하면 보유 자산을 한 번에 갱신할 수 있습니다.
+              </div>
+              <div style={{ marginTop: "12px", position: "relative", zIndex: 2 }}>
+                <Btn sm onClick={downloadCsvTemplate} data-testid="csv-template-download">
+                  CSV 양식 다운로드
+                </Btn>
+              </div>
+              <input
+                type="file"
+                accept=".csv"
+                data-testid="csv-upload-input"
+                onChange={handleCsvFile}
+                disabled={importLoading}
+                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+              />
+            </div>
           </Card>
 
-          {/* Add Form Card */}
           <Card accent="var(--accent-main)">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <ST>??醫낅ぉ 異붽??섍린</ST>
-              {newItem.cls !== "?꾧툑MMF" && (
-                <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
-                  ?덉긽 ?⑷퀎: <strong style={{ color: "var(--accent-main)", fontSize: "15px" }}>{fmt(newItem.amt)}</strong>??                </div>
-              )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <ST>새 종목 추가하기</ST>
+              <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
+                예상 합계: <strong style={{ color: "var(--accent-main)", fontSize: "16px" }}>{fmt(newItem.amt)}</strong>
+              </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              {/* Row 1: Main Info */}
-              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 180px", gap: "15px" }}>
+            {masterError && (
+              <div style={{ marginBottom: "1rem", padding: "10px 12px", borderRadius: "10px", background: "#faeeda", color: "#633806", fontSize: "12px" }}>
+                종목 마스터를 불러오지 못했습니다. {masterError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 180px", gap: "14px" }}>
                 <div>
-                  <label style={labelStyle}>?먯궛援?</label>
-                  <select style={inputStyle} value={newItem.cls} onChange={e => updateNew("cls", e.target.value)} data-testid="manual-class-select">
-                    {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label style={labelStyle}>자산군</label>
+                  <select style={inputStyle} value={newItem.cls} onChange={(e) => updateNewItem("cls", e.target.value)} data-testid="manual-class-select">
+                    {ASSET_CLASSES.map((assetClass) => (
+                      <option key={assetClass} value={assetClass}>
+                        {getAssetClassLabel(assetClass)}
+                      </option>
+                    ))}
                   </select>
                 </div>
+
                 <div>
-                  <label style={labelStyle}>醫낅ぉ紐?(?먮룞?꾩꽦 異붿쿇)</label>
-                  <input placeholder="醫낅ぉ紐낆쓣 寃?됲븯?몄슂" style={inputStyle} value={newItem.etf} onChange={e => updateNew("etf", e.target.value)} list="etf-list-main" />
+                  <label style={labelStyle}>종목명 (자동완성 추천)</label>
+                  <input style={inputStyle} value={newItem.etf} onChange={(e) => updateNewItem("etf", e.target.value)} list="etf-list-main" placeholder="종목명을 검색하세요" />
                 </div>
-                {newItem.cls !== "?꾧툑MMF" ? (
+
+                {isNewCash ? (
                   <div>
-                    <label style={labelStyle}>?섎웾 諛??④?</label>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <input placeholder="?섎웾" type="number" style={{ ...inputStyle, width: "70px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={e => updateNew("qty", e.target.value)} data-testid="manual-qty-input" />
-                      <input placeholder="?꾩옱媛" type="number" style={inputStyle} value={newItem.price || ""} onChange={e => updateNew("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" />
-                    </div>
+                    <label style={labelStyle}>금액</label>
+                    <input type="number" style={{ ...inputStyle, fontWeight: 700 }} value={newItem.amt || ""} onChange={(e) => updateNewItem("amt", e.target.value)} data-testid="manual-amount-input" placeholder="금액 입력" />
                   </div>
                 ) : (
                   <div>
-                    <label style={labelStyle}>?꾧툑 ?됯? 湲덉븸</label>
-                    <input placeholder="?≪닔 ?낅젰 (??" type="number" style={{ ...inputStyle, fontWeight: 700 }} value={newItem.amt || ""} onChange={e => updateNew("amt", e.target.value)} data-testid="manual-amount-input" />
+                    <label style={labelStyle}>수량 및 단가</label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input type="number" style={{ ...inputStyle, width: "72px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={(e) => updateNewItem("qty", e.target.value)} data-testid="manual-qty-input" placeholder="수량" />
+                      <input type="number" style={inputStyle} value={newItem.price || ""} onChange={(e) => updateNewItem("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" placeholder="현재가" />
+                    </div>
                   </div>
                 )}
               </div>
 
               <div>
-                <label style={labelStyle}>留ㅼ엯?먭? / ?먭툑 (?좏깮)</label>
-                <input
-                  placeholder="Optional cost amount"
-                  type="number"
-                  style={inputStyle}
-                  value={newItem.costAmt || ""}
-                  onChange={e => updateNew("costAmt", e.target.value)}
-                />
-                <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 5 }}>
-                  MTS??留ㅼ엯湲덉븸???낅젰?섎㈃ 由ы룷?몄? ?먯궛 紐⑸줉?먯꽌 ?먭? 湲곗? ?섏씡瑜좎쓣 怨꾩궛?⑸땲??
+                <label style={labelStyle}>매입원가 / 원금 (선택)</label>
+                <input type="number" style={inputStyle} value={newItem.costAmt || ""} onChange={(e) => updateNewItem("costAmt", e.target.value)} placeholder="평가손익 계산용" />
+                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
+                  MTS의 매입금액을 입력하면 리포트와 자산 목록에서 원가 기준 손익률을 계산합니다.
                 </div>
               </div>
 
-              {/* Row 2: Helper & Action */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(255,255,255,0.02)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  {newItem.cls !== "?꾧툑MMF" && (
+                  {!isNewCash ? (
                     <>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <label style={{ ...labelStyle, marginBottom: 0 }}>?곗빱 寃??</label>
-                        <input placeholder="?? 360750" style={{ ...inputStyle, width: "100px", padding: "6px 10px" }} value={newItem.code} onChange={e => updateNew("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={e => e.key === 'Enter' && fetchNewItemPrice()} data-testid="manual-code-input" />
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>티커 검색</label>
+                        <input style={{ ...inputStyle, width: "110px", padding: "6px 10px" }} value={newItem.code} onChange={(e) => updateNewItem("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={(e) => e.key === "Enter" && fetchNewItemPrice()} data-testid="manual-code-input" placeholder="예: 360750" />
                       </div>
-                      <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code} style={{ height: "32px", fontSize: "11px" }}>
-                        {loading ? "議고쉶 以?.." : "?쒖꽭 ?먮룞議고쉶"}
+                      <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code} style={{ height: "32px" }}>
+                        {loading ? "조회 중" : "시세 자동조회"}
                       </Btn>
                     </>
+                  ) : (
+                    <div style={{ fontSize: "11px", color: "var(--text-dim)" }}>현금성 자산은 티커 없이 금액만 입력할 수 있습니다.</div>
                   )}
-                  {newItem.cls === "?꾧툑MMF" && <div style={{ fontSize: "11px", color: "var(--text-dim)" }}>?꾧툑 ?먯궛? ?곗빱 ?낅젰 ?놁씠 湲덉븸留???λ맗?덈떎.</div>}
                 </div>
-                <Btn primary onClick={handleAddItem} style={{ height: "38px", padding: "0 24px", fontSize: "13px", fontWeight: 700 }} data-testid="manual-add-button">醫낅ぉ ?ы듃?대━?ㅼ뿉 異붽?</Btn>
+
+                <Btn primary data-testid="manual-add-button" onClick={handleAddItem} style={{ height: "38px", padding: "0 24px", fontWeight: 700 }}>
+                  종목 포트폴리오에 추가
+                </Btn>
               </div>
             </div>
           </Card>
 
-          {/* Holdings List Card */}
           <Card>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <ST>蹂댁쑀 ?먯궛 ?댁뿭</ST>
-              <Btn sm onClick={clearAll} danger>?꾩껜 ??젣</Btn>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <ST>보유 자산 내역</ST>
+              <Btn sm danger onClick={clearAll}>
+                전체 삭제
+              </Btn>
             </div>
 
             <div style={{ overflowX: "auto" }}>
               <table className="premium-table" data-testid="holdings-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 220 }}>醫낅ぉ ?뺣낫</th>
-                    <th style={{ width: 120 }}>?먯궛援?</th>
-                    <th style={{ textAlign: "right", width: 100 }}>?섎웾</th>
-                    <th style={{ textAlign: "right", width: 120 }}>?꾩옱媛</th>
-                    <th style={{ textAlign: "right", width: 150 }}>?됯?湲덉븸</th>
-                    <th style={{ textAlign: "right", width: 140 }}>?됯??먯씡</th>
-                    <th style={{ textAlign: "center", width: 110 }}>愿由?</th>
+                    <th style={{ width: 220 }}>종목 정보</th>
+                    <th style={{ width: 120 }}>자산군</th>
+                    <th style={{ textAlign: "right", width: 100 }}>수량</th>
+                    <th style={{ textAlign: "right", width: 120 }}>현재가</th>
+                    <th style={{ textAlign: "right", width: 150 }}>평가금액</th>
+                    <th style={{ textAlign: "right", width: 140 }}>평가손익</th>
+                    <th style={{ textAlign: "center", width: 110 }}>관리</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => {
-                    const pnl = Number(r.costAmt) > 0 ? Number(r.amt) - Number(r.costAmt) : null;
-                    const pnlPct = pnl != null ? (pnl / Number(r.costAmt)) * 100 : null;
-                    const isNewUpdate = updatedTickers.has(r.code || r.etf);
+                  {rows.map((row, index) => {
+                    const pnl = Number(row.costAmt) > 0 ? Number(row.amt) - Number(row.costAmt) : null;
+                    const pnlPct = pnl != null ? (pnl / Number(row.costAmt)) * 100 : null;
+                    const isUpdated = updatedTickers.has(row.code || row.etf);
 
                     return (
-                      <tr key={i} data-testid="holdings-row" style={{
-                        borderBottom: "0.5px solid rgba(255,255,255,0.03)",
-                        background: isNewUpdate ? "rgba(5, 150, 105, 0.08)" : undefined,
-                        transition: "background 1s ease"
-                      }}>
-                        <td style={{ padding: "16px 0", position: "relative" }}>
-                          {isNewUpdate && (
-                            <div style={{ position: "absolute", left: -4, top: "50%", transform: "translateY(-50%)", width: "4px", height: "70%", background: "var(--color-success)", borderRadius: "2px" }} />
-                          )}
-                          <div style={{ fontSize: "14.5px", fontWeight: 600, color: "var(--text-main)", display: "flex", alignItems: "center", gap: 8 }}>
-                            {r.etf || "誘몄????먯궛"}
-                            {isNewUpdate && <Badge bg="var(--color-success)" c="#fff" style={{ fontSize: "9px", padding: "2px 6px" }}>理쒓렐?ㅼ틪</Badge>}
+                      <tr key={`${row.code || row.etf}-${index}`} data-testid="holdings-row" style={{ background: isUpdated ? "rgba(5, 150, 105, 0.08)" : undefined }}>
+                        <td style={{ padding: "16px 0" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600 }}>
+                            {row.etf || "이름 없는 자산"}
+                            {isUpdated ? <Badge c="#fff" bg="#0f9d58">업데이트</Badge> : null}
                           </div>
-                          <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: 4, letterSpacing: "0.02em" }}>{r.code || "CASH_ASSET"}</div>
+                          <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: "4px" }}>{row.code || "CASH"}</div>
                         </td>
-                        <td style={{ padding: "16px 0" }}><Badge bg={ASSET_COLORS[r.cls] + "15"} c={ASSET_COLORS[r.cls]}>{r.cls}</Badge></td>
-                        <td style={{ textAlign: "right", fontSize: "13.5px", padding: "16px 0" }}>{fmt(r.qty)}</td>
-                        <td style={{ textAlign: "right", fontSize: "13.5px", color: "var(--text-dim)", padding: "16px 0" }}>{fmt(r.price)}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700, fontSize: "14.5px", color: "var(--text-main)", padding: "16px 0" }}>{fmt(r.amt)}</td>
-                        <td style={{ textAlign: "right", fontSize: "12px", padding: "16px 0", color: pnl == null ? "var(--text-dim)" : pnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}>
-                          {pnl == null ? "?먭? ?꾩슂" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                        <td style={{ padding: "16px 0" }}>
+                          <Badge c={ASSET_COLORS[row.cls] || "#333"} bg={`${ASSET_COLORS[row.cls] || "#888"}22`}>
+                            {getAssetClassLabel(row.cls)}
+                          </Badge>
+                        </td>
+                        <td style={{ textAlign: "right", padding: "16px 0" }}>{fmt(row.qty)}</td>
+                        <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>{fmt(row.price)}</td>
+                        <td style={{ textAlign: "right", padding: "16px 0", fontWeight: 700 }}>{fmt(row.amt)}</td>
+                        <td style={{ textAlign: "right", padding: "16px 0", color: pnl == null ? "var(--text-dim)" : pnl >= 0 ? "var(--alert-ok-color)" : "var(--alert-danger-color)" }}>
+                          {pnl == null ? "원가 필요" : `${pnl >= 0 ? "+" : "-"}${fmt(Math.abs(pnl))} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
                         </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
-                          <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                            <Btn sm onClick={() => setEditTarget({ item: r, idx: i })} style={{ padding: "4px 10px", fontSize: "10px" }}>?섏젙</Btn>
-                            <Btn sm onClick={() => handleRemove(i)} danger style={{ padding: "4px 10px", fontSize: "10px" }}>??젣</Btn>
+                          <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                            <Btn sm onClick={() => setEditTarget({ item: row, idx: index })}>
+                              수정
+                            </Btn>
+                            <Btn sm danger onClick={() => handleRemove(index)}>
+                              삭제
+                            </Btn>
                           </div>
                         </td>
                       </tr>
@@ -606,92 +651,67 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, krEtfs = [
             </div>
 
             {rows.length === 0 && (
-              <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--text-dim)", fontSize: "14px", border: "1px dashed var(--border-glass)", borderRadius: "8px", marginTop: "1rem" }}>
-                ?깅줉???먯궛???놁뒿?덈떎. ?곷떒 ?묒떇???듯빐 ?ы듃?대━?ㅻ? 援ъ꽦??蹂댁꽭??
+              <div style={{ textAlign: "center", padding: "3rem 0", color: "var(--text-dim)", border: "1px dashed var(--border-glass)", borderRadius: "8px", marginTop: "1rem" }}>
+                등록된 자산이 없습니다. 직접 입력이나 CSV 업로드를 이용해 포트폴리오를 구성해보세요.
               </div>
             )}
 
-            <div style={{ marginTop: "2rem", padding: "1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>
-                珥?<strong style={{ color: "var(--text-main)" }}>{rows.length}</strong>媛쒖쓽 ?먯궛 蹂댁쑀 以?              </div>
-              <div style={{ fontSize: "14px", fontWeight: 500 }}>
-                ?먯궛 ?⑷퀎: <span style={{ fontSize: "20px", fontWeight: 800, color: "var(--accent-main)", marginLeft: 6 }}>{fmt(totalAmt)}</span> ??              </div>
+            <div style={{ marginTop: "1.5rem", padding: "1rem 1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>총 {rows.length}개 자산</div>
+              <div style={{ fontSize: "15px", fontWeight: 600 }}>
+                자산 합계 <span style={{ fontSize: "22px", fontWeight: 800, color: "var(--accent-main)" }}>{fmt(totalAmt)}</span>
+              </div>
             </div>
           </Card>
         </div>
 
-        {/* Right Section: Allocation Status */}
         <div style={{ position: "sticky", top: "1rem" }}>
           <Card>
-            <ST>?먯궛援곕퀎 鍮꾩쨷 (Real-time)</ST>
-            <div style={{ height: 220, position: "relative", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 100 100" width="100%" height="100%">
-                {(() => {
-                  let start = 0;
-                  return sortedAlloc.map(([cls, amt], i) => {
-                    if (totalAmt <= 0) return null;
-                    const pct = amt / totalAmt * 100;
-                    const x1 = Math.cos(2 * Math.PI * start / 100) * 40 + 50;
-                    const y1 = Math.sin(2 * Math.PI * start / 100) * 40 + 50;
-                    start += pct;
-                    const x2 = Math.cos(2 * Math.PI * start / 100) * 40 + 50;
-                    const y2 = Math.sin(2 * Math.PI * start / 100) * 40 + 50;
-                    return (
-                      <path key={i} d={`M 50 50 L ${x1} ${y1} A 40 40 0 ${pct > 50 ? 1 : 0} 1 ${x2} ${y2} Z`} fill={ASSET_COLORS[cls] || "#888"} stroke="var(--bg-card)" strokeWidth={1.5} />
-                    );
-                  });
-                })()}
-                <circle cx="50" cy="50" r="30" fill="var(--bg-card)" />
-              </svg>
-              <div style={{ position: "absolute", textAlign: "center" }}>
-                <div style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-main)" }}>{((totalAmt / 100000000) * 100).toFixed(0)}%</div>
-                <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: 2 }}>紐⑺몴 ?ъ꽦瑜?</div>
-              </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {sortedAlloc.map(([cls, amt], i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{ width: "10px", height: "10px", borderRadius: "3px", background: ASSET_COLORS[cls] || "#888" }} />
-                    <span style={{ fontSize: "12px", color: "var(--text-dim)", fontWeight: 500 }}>{cls}</span>
+            <ST>자산군 비중 (실시간)</ST>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {sortedAlloc.map(([assetClass, amount]) => {
+                const pct = totalAmt > 0 ? (amount / totalAmt) * 100 : 0;
+                return (
+                  <div key={assetClass}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "12px" }}>
+                      <span>{getAssetClassLabel(assetClass)}</span>
+                      <strong>{pct.toFixed(1)}%</strong>
+                    </div>
+                    <div style={{ height: "10px", borderRadius: "999px", background: "var(--bg-main)", overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: ASSET_COLORS[assetClass] || "#888" }} />
+                    </div>
                   </div>
-                  <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-main)" }}>{((amt / (totalAmt || 1)) * 100).toFixed(1)}%</div>
-                </div>
-              ))}
+                );
+              })}
+              {sortedAlloc.length === 0 && <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>표시할 자산이 없습니다.</div>}
             </div>
           </Card>
         </div>
       </div>
 
-      {/* Edit Modal Overlay */}
       <EditModal
         isOpen={editTarget.idx !== -1}
         item={editTarget.item}
-        onClose={() => setEditTarget({ item: null, idx: -1 })}
-        onSave={handleCompleteEdit}
         krEtfs={krEtfs}
-        tickerMap={tickerMap}
+        onClose={() => setEditTarget({ item: null, idx: -1 })}
+        onSave={handleEditSave}
       />
 
       <ImportResultModal
-        isOpen={!!importResults}
-        results={importResults || []}
-        onClose={() => setImportResults(null)}
-        onConfirm={handleBatchAdd}
-        tickerMap={tickerMap}
+        isOpen={importResults.length > 0}
+        results={importResults}
         currentRows={rows}
+        onClose={() => setImportResults([])}
+        onConfirm={handleBatchAdd}
       />
 
       <datalist id="etf-list-main">
-        {krEtfs.map((item, idx) => (
-          <option key={idx} value={item.name}>{item.ticker} | {item.assetClass}</option>
+        {krEtfs.map((asset) => (
+          <option key={asset.ticker} value={asset.name}>
+            {asset.ticker} | {getAssetClassLabel(asset.assetClass)}
+          </option>
         ))}
       </datalist>
     </div>
   );
 }
-
-
-
-
-

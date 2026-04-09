@@ -1,230 +1,199 @@
-/**
- * Serverless Endpoint: /api/market-signals
- *
- * 복합 시장 시그널 3종을 한 번에 조회합니다:
- * 1. Fear & Greed Index (CNN Business — 무료, API Key 불필요)
- * 2. 수익률 곡선 기울기 (FRED T10Y2Y — FRED_API_KEY 필요)
- * 3. 미국 실업률 (FRED UNRATE — FRED_API_KEY 필요)
- *
- * 왜 하나의 엔드포인트로 묶었나:
- *   - 클라이언트에서 3번 호출하면 Cold Start 비용이 3배 → 하나로 합쳐 1회 호출
- *   - 하나가 실패해도 나머지는 정상 반환 (부분 성공 허용)
- */
-
-function corsHeaders() {
+﻿function corsHeaders() {
   return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
   };
 }
 
-// =============================================================================
-// 1. Fear & Greed Index (CNN)
-// =============================================================================
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(7000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${url} returned ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function fetchText(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(7000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${url} returned ${response.status}`);
+  }
+
+  return response.text();
+}
 
 async function fetchFearAndGreed() {
   try {
-    // CNN의 공개 JSON 엔드포인트 — API Key 불필요
-    const res = await fetch(
-      "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
-      {
-        headers: {
-          "User-Agent": "PensionPilot/1.0",
-          "Accept": "application/json",
-        },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const data = await fetchJson('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'PensionPilot/1.0',
+      },
+    });
 
-    if (!res.ok) throw new Error(`CNN API ${res.status}`);
-    const data = await res.json();
+    const score = Number(data?.fear_and_greed?.score);
+    if (!Number.isFinite(score)) throw new Error('Fear & Greed score missing');
 
-    // CNN 응답 구조: { fear_and_greed: { score, rating, ... } }
-    const fg = data?.fear_and_greed;
-    if (!fg || fg.score == null) throw new Error("F&G score not found");
-
-    const score = Math.round(fg.score * 10) / 10;
-
-    // 등급 분류
-    let label;
-    if (score <= 24) label = "extreme_fear";
-    else if (score <= 44) label = "fear";
-    else if (score <= 55) label = "neutral";
-    else if (score <= 74) label = "greed";
-    else label = "extreme_greed";
-
-    // 한글 라벨
-    const labelKo = {
-      extreme_fear: "극단적 공포",
-      fear: "공포",
-      neutral: "중립",
-      greed: "탐욕",
-      extreme_greed: "극단적 탐욕",
-    }[label];
+    let label = '중립';
+    if (score <= 24) label = '극단적 공포';
+    else if (score <= 44) label = '공포';
+    else if (score <= 55) label = '중립';
+    else if (score <= 74) label = '탐욕';
+    else label = '극단적 탐욕';
 
     return {
-      score,
+      score: Math.round(score * 10) / 10,
       label,
-      labelKo,
+      source: 'CNN',
       updatedAt: new Date().toISOString(),
-      source: "CNN",
       error: null,
     };
-  } catch (e) {
-    console.error("Fear & Greed fetch error:", e.message);
-    return { score: null, label: null, labelKo: null, error: e.message, source: "CNN" };
+  } catch (error) {
+    return {
+      score: null,
+      label: null,
+      source: 'CNN',
+      updatedAt: null,
+      error: error.message,
+    };
   }
 }
 
-// =============================================================================
-// 2. 수익률 곡선 기울기 (FRED T10Y2Y: 10년-2년 국채 스프레드)
-// =============================================================================
+function parseFredCsvValue(csvText) {
+  const lines = String(csvText || '')
+    .trim()
+    .split(/\r?\n/)
+    .slice(1)
+    .filter(Boolean);
 
-async function fetchYieldSpread(apiKey) {
-  if (!apiKey) return { spread: null, status: null, error: "FRED_API_KEY not configured", source: "FRED" };
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const [date, value] = lines[i].split(',');
+    const parsed = Number(value);
+    if (date && Number.isFinite(parsed)) return { date, value: parsed };
+  }
 
+  throw new Error('No valid FRED rows found');
+}
+
+async function fetchFredSeries(seriesId) {
+  const csvText = await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`);
+  return parseFredCsvValue(csvText);
+}
+
+async function fetchYieldCurve() {
   try {
-    const url = new URL("https://api.stlouisfed.org/fred/series/observations");
-    url.searchParams.set("series_id", "T10Y2Y");
-    url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("file_type", "json");
-    url.searchParams.set("sort_order", "desc");
-    url.searchParams.set("limit", "5"); // 최근 5건 (주말/공휴일 결측 대비)
+    const latest = await fetchFredSeries('T10Y2Y');
+    const spread = latest.value;
 
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`FRED API ${res.status}`);
-    const data = await res.json();
-
-    // 결측값(".") 제외하고 가장 최근 유효값 사용
-    const valid = (data.observations || []).find(o => o.value !== ".");
-    if (!valid) throw new Error("No valid T10Y2Y data");
-
-    const spread = parseFloat(valid.value);
-
-    // 상태 분류
-    let status;
-    if (spread < -0.1) status = "inverted";      // 역전 → 경기침체 경고
-    else if (spread < 0.5) status = "flat";       // 평탄화
-    else if (spread < 1.5) status = "normal";     // 정상
-    else status = "steep";                         // 가파름 → 회복기
-
-    const statusKo = {
-      inverted: "역전 ⚠️",
-      flat: "평탄화",
-      normal: "정상",
-      steep: "가파름",
-    }[status];
+    let status = '정상';
+    if (spread < 0) status = '역전';
+    else if (spread < 0.5) status = '평탄';
+    else if (spread > 1.5) status = '가팔름';
 
     return {
       spread: Math.round(spread * 100) / 100,
-      date: valid.date,
       status,
-      statusKo,
+      date: latest.date,
+      source: 'FRED',
       updatedAt: new Date().toISOString(),
-      source: "FRED",
       error: null,
     };
-  } catch (e) {
-    console.error("Yield spread fetch error:", e.message);
-    return { spread: null, status: null, error: e.message, source: "FRED" };
-  }
-}
-
-// =============================================================================
-// 3. 미국 실업률 (FRED UNRATE) — LAA 엔진용
-// =============================================================================
-
-async function fetchUnemploymentRate(apiKey) {
-  if (!apiKey) return { rate: null, avg12m: null, error: "FRED_API_KEY not configured", source: "FRED" };
-
-  try {
-    const url = new URL("https://api.stlouisfed.org/fred/series/observations");
-    url.searchParams.set("series_id", "UNRATE");
-    url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("file_type", "json");
-    url.searchParams.set("sort_order", "desc");
-    url.searchParams.set("limit", "13"); // 최근 13개월 (12M 평균 + 현재)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`FRED API ${res.status}`);
-    const data = await res.json();
-
-    const valid = (data.observations || []).filter(o => o.value !== ".").map(o => ({
-      date: o.date,
-      value: parseFloat(o.value),
-    }));
-
-    if (valid.length === 0) throw new Error("No valid UNRATE data");
-
-    const current = valid[0].value;
-    // 12개월 평균 (현재 포함)
-    const avg12m = valid.length >= 12
-      ? Math.round(valid.slice(0, 12).reduce((s, v) => s + v.value, 0) / 12 * 100) / 100
-      : current;
-
-    // LAA 조건: 실업률 < 12M 평균이면 경기 호조
-    const isBelow12mAvg = current < avg12m;
-
+  } catch (error) {
     return {
-      rate: current,
-      avg12m,
-      date: valid[0].date,
-      isBelow12mAvg,
-      updatedAt: new Date().toISOString(),
-      source: "FRED",
-      error: null,
+      spread: null,
+      status: null,
+      date: null,
+      source: 'FRED',
+      updatedAt: null,
+      error: error.message,
     };
-  } catch (e) {
-    console.error("Unemployment rate fetch error:", e.message);
-    return { rate: null, avg12m: null, error: e.message, source: "FRED" };
   }
 }
 
-// =============================================================================
-// Handler
-// =============================================================================
+async function fetchUnemployment() {
+  try {
+    const latest = await fetchFredSeries('UNRATE');
+    return {
+      rate: Math.round(latest.value * 10) / 10,
+      date: latest.date,
+      source: 'FRED',
+      updatedAt: new Date().toISOString(),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      rate: null,
+      date: null,
+      source: 'FRED',
+      updatedAt: null,
+      error: error.message,
+    };
+  }
+}
+
+function buildCompositeScore(fearGreed, yieldCurve) {
+  let score = 0;
+
+  if (fearGreed?.score != null) {
+    if (fearGreed.score <= 20) score += 3;
+    else if (fearGreed.score <= 40) score += 2;
+    else if (fearGreed.score <= 55) score += 1;
+  }
+
+  if (yieldCurve?.spread != null) {
+    if (yieldCurve.spread < 0) score += 2;
+    else if (yieldCurve.spread < 0.5) score += 1;
+  }
+
+  return score;
+}
 
 export default async function handler(req, res) {
-  if (req.method === "OPTIONS") {
+  if (req.method === 'OPTIONS') {
     return res.status(204).set(corsHeaders()).end();
   }
 
-  const fredKey = process.env.FRED_API_KEY;
-
   try {
-    // 3개를 병렬 조회 (하나가 실패해도 나머지는 정상 반환)
-    // 개별 fetch 시그널 타임아웃 외에도 Promise.all 전체에 대한 타임아웃 고려 시도
     const [fearGreed, yieldCurve, unemployment] = await Promise.all([
       fetchFearAndGreed(),
-      fetchYieldSpread(fredKey),
-      fetchUnemploymentRate(fredKey),
+      fetchYieldCurve(),
+      fetchUnemployment(),
     ]);
 
-    // 복합 점수 계산 (0~8)
-    let compositeScore = 0;
-    if (fearGreed.score !== null) {
-      if (fearGreed.score <= 20) compositeScore += 3;
-      else if (fearGreed.score <= 40) compositeScore += 2;
-      else if (fearGreed.score >= 75) compositeScore += 0;
-      else compositeScore += 1;
-    }
-    if (yieldCurve.spread !== null) {
-      if (yieldCurve.spread < 0) compositeScore += 2;
-      else if (yieldCurve.spread < 0.5) compositeScore += 1;
+    const allFailed = [fearGreed, yieldCurve, unemployment].every(
+      (item) => item.error && Object.values(item).every((value) => value == null || typeof value === 'string')
+    );
+
+    if (allFailed) {
+      return res.status(500).set(corsHeaders()).json({
+        error: '시장 신호를 모두 불러오지 못했습니다.',
+        fearGreed,
+        yieldCurve,
+        unemployment,
+        fetchedAt: new Date().toISOString(),
+      });
     }
 
     return res.status(200).set(corsHeaders()).json({
       fearGreed,
       yieldCurve,
       unemployment,
-      compositeScore,
+      compositeScore: buildCompositeScore(fearGreed, yieldCurve),
       fetchedAt: new Date().toISOString(),
     });
-  } catch (e) {
-    console.error("Global Market Signals Error:", e.message);
+  } catch (error) {
     return res.status(500).set(corsHeaders()).json({
-      error: e.message,
+      error: error.message,
       fetchedAt: new Date().toISOString(),
     });
   }

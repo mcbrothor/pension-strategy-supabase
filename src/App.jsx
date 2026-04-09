@@ -20,12 +20,12 @@ import { RISK_DATA } from "./constants/index.js";
 import { getStrat } from "./utils/helpers.js";
 
 const TABS = [
-  { id: "daily", label: "일일점검", icon: "1", num: 1 },
-  { id: "risk", label: "리스크", icon: "2", num: 2 },
-  { id: "orders", label: "주문계획", icon: "3", num: 3 },
-  { id: "validation", label: "전략검증", icon: "4", num: 4 },
-  { id: "report", label: "리포트", icon: "5", num: 5 },
-  { id: "settings", label: "설정", icon: "6", num: 6 },
+  { id: "daily", label: "일일점검", num: 1 },
+  { id: "risk", label: "리스크", num: 2 },
+  { id: "orders", label: "주문계획", num: 3 },
+  { id: "validation", label: "전략검증", num: 4 },
+  { id: "report", label: "리포트", num: 5 },
+  { id: "settings", label: "설정", num: 6 },
 ];
 
 export default function PensionPilot() {
@@ -151,7 +151,7 @@ export default function PensionPilot() {
               data-testid={`tab-${t.id}`}
             >
               <span className="tab-number">{t.num}</span>
-              <span>{t.icon} {t.label}</span>
+              <span>{t.label}</span>
             </button>
           ))}
         </div>

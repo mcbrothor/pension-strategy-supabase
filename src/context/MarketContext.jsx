@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculatePearsonCorr } from '../utils/calculators';
 
@@ -15,9 +15,8 @@ const safeParseJSON = (key, defaultVal) => {
 };
 
 export function MarketProvider({ children }) {
-  // 초기값: localStorage에서 불러오거나 없으면 null 사용 (안전한 파싱)
-  const savedVix = safeParseJSON('vix_data', { vix: null, source: "Init", updatedAt: null });
-  
+  const savedVix = safeParseJSON('vix_data', { vix: null, source: 'Init', updatedAt: null });
+
   const [vix, setVix] = useState(savedVix.vix);
   const [vixSource, setVixSource] = useState(savedVix.source);
   const [vixUpdatedAt, setVixUpdatedAt] = useState(savedVix.updatedAt);
@@ -27,13 +26,11 @@ export function MarketProvider({ children }) {
   const [tickerMap, setTickerMap] = useState({});
   const [masterError, setMasterError] = useState(null);
 
-  // 상관관계 상태 (로컬 스토리지 캐시)
   const savedCorr = safeParseJSON('corr_data', { avg: 0, matrix: {}, updatedAt: null });
   const [avgCorrelation, setAvgCorrelation] = useState(savedCorr.avg || 0);
   const [corrUpdatedAt, setCorrUpdatedAt] = useState(savedCorr.updatedAt);
   const [corrLoading, setCorrLoading] = useState(false);
 
-  // 2단계: 복합 시장 시그널 (Fear & Greed + 수익률 곡선 + 실업률)
   const savedSignals = safeParseJSON('market_signals', {});
   const [fearGreed, setFearGreed] = useState(savedSignals.fearGreed || null);
   const [yieldSpread, setYieldSpread] = useState(savedSignals.yieldSpread || null);
@@ -41,19 +38,18 @@ export function MarketProvider({ children }) {
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [signalsError, setSignalsError] = useState(null);
 
-
   const fetchVix = async () => {
     setVixLoading(true);
     setVixError(null);
     try {
-      const res = await fetch("/api/vix");
+      const res = await fetch('/api/vix');
       if (res.ok) {
         const data = await res.json();
-        if (data.ok && typeof data.vix === "number") {
+        if (data.ok && typeof data.vix === 'number') {
           const newData = {
             vix: data.vix,
-            source: data.source || "Unknown",
-            updatedAt: data.updatedAt
+            source: data.source || 'Unknown',
+            updatedAt: data.updatedAt,
           };
           setVix(newData.vix);
           setVixSource(newData.source);
@@ -61,11 +57,9 @@ export function MarketProvider({ children }) {
           localStorage.setItem('vix_data', JSON.stringify(newData));
           setVixLoading(false);
           return;
-        } else {
-          setVixError(data.error || "VIX 데이터 형식이 올바르지 않습니다.");
         }
+        setVixError(data.error || 'VIX 데이터 형식이 올바르지 않습니다.');
       } else {
-        // 500 에러 등의 경우 상세 메시지 추출 시도
         try {
           const errData = await res.json();
           setVixError(errData.error || `VIX 조회 실패 (Status: ${res.status})`);
@@ -74,13 +68,12 @@ export function MarketProvider({ children }) {
         }
       }
     } catch (e) {
-      console.warn("VIX 조회 실패:", e.message);
+      console.warn('VIX 조회 실패:', e.message);
       setVixError(e.message);
     }
     setVixLoading(false);
   };
 
-  // 복합 시장 시그널 조회 (Fear & Greed + 수익률곡선 + 실업률)
   const fetchMarketSignals = async () => {
     setSignalsLoading(true);
     setSignalsError(null);
@@ -113,25 +106,27 @@ export function MarketProvider({ children }) {
     setMasterError(null);
     try {
       const { data, error } = await supabase
-        .from("stock_master")
-        .select("ticker, name, asset_class")
-        .order("name", { ascending: true });
-      
+        .from('stock_master')
+        .select('ticker, name, asset_class')
+        .order('name', { ascending: true });
+
       if (error) throw error;
-      
+
       if (data) {
-        const formattedData = data.map(d => ({
-          ticker: d.ticker,
-          name: d.name,
-          assetClass: d.asset_class
+        const formattedData = data.map((item) => ({
+          ticker: item.ticker,
+          name: item.name,
+          assetClass: item.asset_class,
         }));
         setKrEtfs(formattedData);
         const map = {};
-        formattedData.forEach(e => { map[e.name] = e; });
+        formattedData.forEach((item) => {
+          map[item.name] = item;
+        });
         setTickerMap(map);
       }
     } catch (err) {
-      console.error("Master Data Load Error:", err.message);
+      console.error('Master Data Load Error:', err.message);
       setMasterError(err.message);
     }
   };
@@ -143,48 +138,44 @@ export function MarketProvider({ children }) {
     }
     setCorrLoading(true);
     try {
-      const hData = [];
-      // 1. 각 종목별 과거 60일 시세 병렬 조회
-      const requests = holdings.map(async (h) => {
-        const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
-        const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
+      const requests = holdings.map(async (holding) => {
+        const isOverseas = ['誘멸뎅二쇱떇', '?댁쇅梨꾧텒', '?먯옄??', '湲?'].includes(holding.cls);
+        const res = await fetch(`/api/kis-history?ticker=${holding.code}&type=${isOverseas ? 'overseas' : 'domestic'}`);
         const data = await res.json();
         if (data.prices && data.prices.length > 10) {
-          // 일일 수익률(Returns) 계산
           const returns = [];
-          for (let i = 1; i < data.prices.length; i++) {
-            returns.push((data.prices[i] - data.prices[i-1]) / data.prices[i-1]);
+          for (let i = 1; i < data.prices.length; i += 1) {
+            returns.push((data.prices[i] - data.prices[i - 1]) / data.prices[i - 1]);
           }
-          return { etf: h.etf, returns };
+          return { etf: holding.etf, returns };
         }
         return null;
       });
 
-      const results = (await Promise.all(requests)).filter(r => r !== null);
-      if (results.length < 2) throw new Error("계산 가능한 종목 데이터가 부족합니다.");
+      const results = (await Promise.all(requests)).filter((item) => item !== null);
+      if (results.length < 2) throw new Error('계산 가능한 종목 데이터가 부족합니다.');
 
-      // 2. 피어슨 상관계수 행렬 및 평균 계산
       let totalCorr = 0;
       let count = 0;
       const matrix = {};
 
-      for (let i = 0; i < results.length; i++) {
-        for (let j = i + 1; j < results.length; j++) {
+      for (let i = 0; i < results.length; i += 1) {
+        for (let j = i + 1; j < results.length; j += 1) {
           const rho = calculatePearsonCorr(results[i].returns, results[j].returns);
           totalCorr += rho;
-          count++;
+          count += 1;
           matrix[`${results[i].etf}-${results[j].etf}`] = rho;
         }
       }
 
       const avg = count > 0 ? totalCorr / count : 0;
       const newCorrObj = { avg, matrix, updatedAt: new Date().toISOString() };
-      
+
       setAvgCorrelation(avg);
       setCorrUpdatedAt(newCorrObj.updatedAt);
       localStorage.setItem('corr_data', JSON.stringify(newCorrObj));
     } catch (e) {
-      console.error("Correlation error:", e.message);
+      console.error('Correlation error:', e.message);
     } finally {
       setCorrLoading(false);
     }
@@ -197,14 +188,29 @@ export function MarketProvider({ children }) {
   }, []);
 
   return (
-    <MarketContext.Provider value={{ 
-      vix, vixSource, vixUpdatedAt, vixLoading, vixError, 
-      fetchVix, krEtfs, tickerMap, masterError,
-      avgCorrelation, corrUpdatedAt, corrLoading, refreshCorrelation,
-      // 2단계: 복합 시장 시그널
-      fearGreed, yieldSpread, unemployment,
-      signalsLoading, signalsError, fetchMarketSignals
-    }}>
+    <MarketContext.Provider
+      value={{
+        vix,
+        vixSource,
+        vixUpdatedAt,
+        vixLoading,
+        vixError,
+        fetchVix,
+        krEtfs,
+        tickerMap,
+        masterError,
+        avgCorrelation,
+        corrUpdatedAt,
+        corrLoading,
+        refreshCorrelation,
+        fearGreed,
+        yieldSpread,
+        unemployment,
+        signalsLoading,
+        signalsError,
+        fetchMarketSignals,
+      }}
+    >
       {children}
     </MarketContext.Provider>
   );
