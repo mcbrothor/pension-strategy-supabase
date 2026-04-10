@@ -64,6 +64,8 @@ export default function PensionPilot() {
     updateStrategy,
     saveHoldings,
     savePrincipalTotal,
+    restorePreviousPortfolio,
+    restoreInfo,
     degradedMode,
     targetSource,
   } = usePortfolio();
@@ -222,6 +224,8 @@ export default function PensionPilot() {
               setPortfolio={setPortfolio}
               saveHoldings={saveHoldings}
               savePrincipalTotal={savePrincipalTotal}
+              restorePreviousPortfolio={restorePreviousPortfolio}
+              restoreInfo={restoreInfo}
               krEtfs={krEtfs}
               tickerMap={tickerMap}
               masterError={masterError}

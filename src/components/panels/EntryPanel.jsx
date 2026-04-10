@@ -73,6 +73,22 @@ function formatUpdatedAt(value) {
   });
 }
 
+function formatRestoreSavedAt(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function normalizeName(value) {
   return String(value || "")
     .toLowerCase()
@@ -391,7 +407,17 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
   );
 }
 
-export default function EntryPanel({ portfolio, onSave, onRowsChange, onPrincipalTotalChange, krEtfs = [], tickerMap = {}, masterError }) {
+export default function EntryPanel({
+  portfolio,
+  onSave,
+  onRowsChange,
+  onPrincipalTotalChange,
+  onRestorePrevious,
+  restoreInfo,
+  krEtfs = [],
+  tickerMap = {},
+  masterError
+}) {
   const [rows, setRows] = useState(portfolio.holdings || []);
   const [newItem, setNewItem] = useState(makeEmptyItem());
   const [loading, setLoading] = useState(false);
@@ -707,10 +733,31 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, onPrincipa
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
               <ST>보유 자산 내역</ST>
-              <Btn sm danger onClick={clearAll}>
-                전체 삭제
-              </Btn>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                {restoreInfo?.hasBackup && (
+                  <Btn
+                    sm
+                    onClick={() => {
+                      const restored = onRestorePrevious?.();
+                      if (!restored) alert("복원 가능한 이전 저장본을 찾지 못했습니다.");
+                    }}
+                    data-testid="restore-portfolio-button"
+                  >
+                    마지막 저장본 복원
+                  </Btn>
+                )}
+                <Btn sm danger onClick={clearAll}>
+                  전체 삭제
+                </Btn>
+              </div>
             </div>
+
+            {restoreInfo?.hasBackup && rows.length === 0 && (
+              <div style={{ marginBottom: "1rem", padding: "12px 14px", borderRadius: "10px", background: "#eef6ff", color: "#0c447c", fontSize: "12px" }}>
+                이전에 저장한 보유 자산이 남아 있습니다.
+                {formatRestoreSavedAt(restoreInfo.savedAt) ? ` 마지막 저장: ${formatRestoreSavedAt(restoreInfo.savedAt)}` : ""}
+              </div>
+            )}
 
             <div style={{ overflowX: "auto" }}>
               <table className="premium-table" data-testid="holdings-table">

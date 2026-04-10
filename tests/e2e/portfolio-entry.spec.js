@@ -120,5 +120,45 @@ test.describe("Portfolio Entry Flows", () => {
     await expect(page.getByTestId("holdings-table")).toContainText("E2E 테스트 ETF");
     await expect(page.getByTestId("holdings-table")).toContainText("999999");
   });
+
+  test("restore button recovers the latest locally saved holdings backup", async ({ page }) => {
+    await page.addInitScript(() => {
+      const backupPayload = [
+        {
+          savedAt: "2026-04-11T03:15:00.000Z",
+          portfolio: {
+            strategy: "allseason",
+            principalTotal: 120000,
+            holdings: [
+              {
+                etf: "복구 테스트 ETF",
+                code: "RESTORE1",
+                cls: "미국주식",
+                qty: 3,
+                price: 40000,
+                amt: 120000,
+                costAmt: 100000,
+                updatedAt: "2026-04-11T03:15:00.000Z",
+              },
+            ],
+          },
+        },
+      ];
+
+      window.localStorage.setItem("portfolio_state:demo", JSON.stringify({ strategy: "allseason", principalTotal: 0, holdings: [] }));
+      window.localStorage.setItem("portfolio_state_backup:demo", JSON.stringify(backupPayload));
+    });
+
+    await page.goto("/");
+
+    await page.getByTestId("tab-settings").click();
+    await page.getByTestId("settings-subtab-assets").click();
+
+    await expect(page.getByTestId("restore-portfolio-button")).toBeVisible();
+    await page.getByTestId("restore-portfolio-button").click();
+    await expect(page.getByTestId("holdings-table")).toContainText("복구 테스트 ETF");
+    await expect(page.getByTestId("holdings-table")).toContainText("RESTORE1");
+    await expect(page.getByTestId("holding-return")).toContainText("20.0%");
+  });
 });
 

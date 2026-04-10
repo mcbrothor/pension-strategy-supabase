@@ -7,6 +7,8 @@ import { computeTargets } from '../services/momentumEngine.js';
 const PortfolioContext = createContext();
 const PRINCIPAL_STORAGE_PREFIX = 'portfolio_principal_total';
 const PORTFOLIO_STORAGE_PREFIX = 'portfolio_state';
+const PORTFOLIO_BACKUP_STORAGE_PREFIX = 'portfolio_state_backup';
+const PORTFOLIO_BACKUP_LIMIT = 5;
 
 function getPrincipalStorageKey(userId) {
   return `${PRINCIPAL_STORAGE_PREFIX}:${userId || 'demo'}`;
@@ -14,6 +16,10 @@ function getPrincipalStorageKey(userId) {
 
 function getPortfolioStorageKey(userId) {
   return `${PORTFOLIO_STORAGE_PREFIX}:${userId || 'demo'}`;
+}
+
+function getPortfolioBackupStorageKey(userId) {
+  return `${PORTFOLIO_BACKUP_STORAGE_PREFIX}:${userId || 'demo'}`;
 }
 
 function readStoredPrincipalTotal(userId) {
@@ -47,22 +53,7 @@ function readStoredPortfolio(userId) {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw);
-    const holdings = Array.isArray(parsed?.holdings) ? parsed.holdings.map(normalizeHolding) : [];
-    const total = holdings.reduce((sum, item) => sum + (Number(item.amt) || 0), 0);
-    const principalTotal =
-      Number(parsed?.principalTotal) ||
-      holdings.reduce((sum, item) => sum + (Number(item.costAmt) || 0), 0) ||
-      DEMO_PORTFOLIO.principalTotal;
-
-    return {
-      ...DEMO_PORTFOLIO,
-      ...parsed,
-      total,
-      principalTotal,
-      holdings,
-      history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
-    };
+    return readPortfolioLike(JSON.parse(raw));
   } catch (error) {
     console.error('Stored portfolio parse error:', error);
     return null;
@@ -71,13 +62,79 @@ function readStoredPortfolio(userId) {
 
 function writeStoredPortfolio(userId, portfolio) {
   if (typeof window === 'undefined') return;
+  const normalizedPortfolio = {
+    ...portfolio,
+    holdings: Array.isArray(portfolio?.holdings) ? portfolio.holdings.map(normalizeHolding) : [],
+  };
+  window.localStorage.setItem(getPortfolioStorageKey(userId), JSON.stringify(normalizedPortfolio));
+
+  if (normalizedPortfolio.holdings.length === 0) return;
+
+  const backupKey = getPortfolioBackupStorageKey(userId);
+  const existingBackupsRaw = window.localStorage.getItem(backupKey);
+  let existingBackups = [];
+
+  try {
+    existingBackups = existingBackupsRaw ? JSON.parse(existingBackupsRaw) : [];
+  } catch {
+    existingBackups = [];
+  }
+
+  const nextBackup = {
+    savedAt: new Date().toISOString(),
+    portfolio: normalizedPortfolio,
+  };
+
+  const dedupedBackups = existingBackups.filter((item) => {
+    try {
+      return JSON.stringify(item?.portfolio?.holdings || []) !== JSON.stringify(normalizedPortfolio.holdings);
+    } catch {
+      return true;
+    }
+  });
+
   window.localStorage.setItem(
-    getPortfolioStorageKey(userId),
-    JSON.stringify({
-      ...portfolio,
-      holdings: Array.isArray(portfolio?.holdings) ? portfolio.holdings.map(normalizeHolding) : [],
-    })
+    backupKey,
+    JSON.stringify([nextBackup, ...dedupedBackups].slice(0, PORTFOLIO_BACKUP_LIMIT))
   );
+}
+
+function readStoredPortfolioBackups(userId) {
+  if (typeof window === 'undefined') return [];
+  const raw = window.localStorage.getItem(getPortfolioBackupStorageKey(userId));
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        savedAt: item?.savedAt || null,
+        portfolio: item?.portfolio ? readPortfolioLike(item.portfolio) : null,
+      }))
+      .filter((item) => item.portfolio && item.portfolio.holdings.length > 0);
+  } catch (error) {
+    console.error('Stored portfolio backup parse error:', error);
+    return [];
+  }
+}
+
+function readPortfolioLike(parsed) {
+  const holdings = Array.isArray(parsed?.holdings) ? parsed.holdings.map(normalizeHolding) : [];
+  const total = holdings.reduce((sum, item) => sum + (Number(item.amt) || 0), 0);
+  const principalTotal =
+    Number(parsed?.principalTotal) ||
+    holdings.reduce((sum, item) => sum + (Number(item.costAmt) || 0), 0) ||
+    DEMO_PORTFOLIO.principalTotal;
+
+  return {
+    ...DEMO_PORTFOLIO,
+    ...parsed,
+    total,
+    principalTotal,
+    holdings,
+    history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
+  };
 }
 
 /**
@@ -107,11 +164,12 @@ function remapHoldingsTargets(holdings, targetMap) {
 }
 
 export function PortfolioProvider({ children }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading, lastUserId } = useAuth();
   const [portfolio, setPortfolio] = useState(DEMO_PORTFOLIO);
   const [isFetching, setIsFetching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDemo, setIsDemo] = useState(true);
+  const [restoreInfo, setRestoreInfo] = useState({ hasBackup: false, savedAt: null });
   const [momentumTargets, setMomentumTargets] = useState({});
 
   // 정합성 수정: 모멘텀 API 실패 시 직전 유효 타깃으로 폴백
@@ -172,6 +230,26 @@ export function PortfolioProvider({ children }) {
     setTargetSource('fallback_default');
     return defaultTargets;
   };
+
+  const refreshRestoreInfo = React.useCallback(
+    (targetUserId) => {
+      const backups = readStoredPortfolioBackups(targetUserId);
+      const primaryPortfolio = readStoredPortfolio(targetUserId);
+      const fallbackBackup = backups[0]?.portfolio || null;
+      const latestPortfolio =
+        primaryPortfolio?.holdings?.length > 0 ? primaryPortfolio : fallbackBackup;
+      const latestSavedAt =
+        backups[0]?.savedAt || latestPortfolio?.updatedAt || null;
+
+      setRestoreInfo({
+        hasBackup: Boolean(latestPortfolio && latestPortfolio.holdings.length > 0),
+        savedAt: latestSavedAt,
+      });
+
+      return latestPortfolio;
+    },
+    []
+  );
 
   const loadPortfolio = async () => {
     if (!user) return;
@@ -259,8 +337,17 @@ export function PortfolioProvider({ children }) {
         }))
       };
 
+      const cachedPortfolio = readStoredPortfolio(user.id);
+      if (mappedHoldings.length === 0 && cachedPortfolio?.holdings?.length > 0) {
+        setPortfolio(cachedPortfolio);
+        setIsDemo(false);
+        refreshRestoreInfo(user.id);
+        return;
+      }
+
       setPortfolio(nextPortfolio);
       writeStoredPortfolio(user.id, nextPortfolio);
+      refreshRestoreInfo(user.id);
 
       setIsDemo(false);
     } catch (e) {
@@ -270,6 +357,7 @@ export function PortfolioProvider({ children }) {
         setPortfolio(cachedPortfolio);
         setIsDemo(false);
       }
+      refreshRestoreInfo(user.id);
     } finally {
       setIsFetching(false);
     }
@@ -286,6 +374,7 @@ export function PortfolioProvider({ children }) {
           holdings: items.map(normalizeHolding),
         };
         writeStoredPortfolio(null, nextPortfolio);
+        refreshRestoreInfo(null);
         return nextPortfolio;
       });
       return;
@@ -387,9 +476,20 @@ export function PortfolioProvider({ children }) {
         principalTotal: normalized,
       };
       writeStoredPortfolio(user?.id, nextPortfolio);
+      refreshRestoreInfo(user?.id || null);
       return nextPortfolio;
     });
   };
+
+  const restorePreviousPortfolio = React.useCallback(() => {
+    const targetUserId = user?.id || lastUserId || null;
+    const latestStoredPortfolio = refreshRestoreInfo(targetUserId);
+    if (!latestStoredPortfolio) return false;
+
+    setPortfolio(latestStoredPortfolio);
+    setIsDemo(!targetUserId);
+    return true;
+  }, [lastUserId, refreshRestoreInfo, user]);
 
   const updateStrategy = async (strategyId) => {
     const newStrat = STRATEGIES.find(it => it.id === strategyId);
@@ -435,19 +535,32 @@ export function PortfolioProvider({ children }) {
   };
 
   useEffect(() => {
-    if (user) loadPortfolio();
-    else {
-      const storedPortfolio = readStoredPortfolio(null);
-      const storedPrincipalTotal = readStoredPrincipalTotal(null);
-      setPortfolio(
-        storedPortfolio || {
-          ...DEMO_PORTFOLIO,
-          principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
-        }
-      );
-      setIsDemo(true);
+    if (authLoading) return;
+
+    if (user) {
+      loadPortfolio();
+      return;
     }
-  }, [user]);
+
+    const lastSignedInPortfolio = lastUserId ? readStoredPortfolio(lastUserId) : null;
+    if (lastSignedInPortfolio) {
+      setPortfolio(lastSignedInPortfolio);
+      setIsDemo(false);
+      refreshRestoreInfo(lastUserId);
+      return;
+    }
+
+    const storedPortfolio = readStoredPortfolio(null);
+    const storedPrincipalTotal = readStoredPrincipalTotal(null);
+    setPortfolio(
+      storedPortfolio || {
+        ...DEMO_PORTFOLIO,
+        principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
+        }
+    );
+    setIsDemo(true);
+    refreshRestoreInfo(null);
+  }, [authLoading, user, lastUserId, refreshRestoreInfo]);
 
   return (
     <PortfolioContext.Provider value={{ 
@@ -459,6 +572,8 @@ export function PortfolioProvider({ children }) {
       loadPortfolio, 
       saveHoldings, 
       savePrincipalTotal,
+      restorePreviousPortfolio,
+      restoreInfo,
       updateStrategy,
       fetchMomentumTargets, // 미리보기용 노출
       degradedMode,
