@@ -414,6 +414,7 @@ export default function EntryPanel({
   onPrincipalTotalChange,
   onRestorePrevious,
   restoreInfo,
+  syncStatus,
   krEtfs = [],
   tickerMap = {},
   masterError
@@ -444,6 +445,8 @@ export default function EntryPanel({
   const principalTotal = Number(portfolio.principalTotal) || 0;
   const totalPnl = principalTotal > 0 ? totalAmt - principalTotal : null;
   const totalPnlPct = totalPnl != null ? (totalPnl / principalTotal) * 100 : null;
+  const canPersistToSupabase = syncStatus === "supabase";
+  const requiresLogin = syncStatus === "auth_required";
 
   const sortedAlloc = useMemo(() => {
     const grouped = {};
@@ -500,6 +503,11 @@ export default function EntryPanel({
   };
 
   const handleAddItem = async () => {
+    if (!canPersistToSupabase) {
+      alert("로그인된 Supabase 세션이 없어서 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.");
+      return;
+    }
+
     const updatedAt = new Date().toISOString();
     const resolved = newItem.code ? null : resolveAssetByName(newItem.etf, tickerMap, krEtfs);
     const nextItem = resolved
@@ -530,32 +538,61 @@ export default function EntryPanel({
         : rows.map((row, index) => (index === existingIndex ? mergeHolding(row, nextItem) : row));
 
     const updatedKey = nextItem.code || nextItem.etf;
-    syncRows(nextRows);
-    setUpdatedTickers(new Set(updatedKey ? [updatedKey] : []));
-    setTimeout(() => setUpdatedTickers(new Set()), 5000);
-    setNewItem(makeEmptyItem());
-    await onSave(nextRows);
+    try {
+      syncRows(nextRows);
+      setUpdatedTickers(new Set(updatedKey ? [updatedKey] : []));
+      setTimeout(() => setUpdatedTickers(new Set()), 5000);
+      setNewItem(makeEmptyItem());
+      await onSave(nextRows);
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const handleEditSave = async (item) => {
+    if (!canPersistToSupabase) {
+      alert("로그인된 Supabase 세션이 없어서 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.");
+      return;
+    }
+
     const nextRows = [...rows];
     nextRows[editTarget.idx] = { ...item, updatedAt: new Date().toISOString() };
-    syncRows(nextRows);
-    setEditTarget({ item: null, idx: -1 });
-    await onSave(nextRows);
+    try {
+      syncRows(nextRows);
+      setEditTarget({ item: null, idx: -1 });
+      await onSave(nextRows);
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const handleRemove = async (index) => {
+    if (!canPersistToSupabase) {
+      alert("로그인된 Supabase 세션이 없어서 삭제할 수 없습니다. 계정 탭에서 다시 로그인해주세요.");
+      return;
+    }
     if (!window.confirm("선택한 종목을 삭제할까요?")) return;
     const nextRows = rows.filter((_, rowIndex) => rowIndex !== index);
-    syncRows(nextRows);
-    await onSave(nextRows);
+    try {
+      syncRows(nextRows);
+      await onSave(nextRows);
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const clearAll = async () => {
+    if (!canPersistToSupabase) {
+      alert("로그인된 Supabase 세션이 없어서 전체 삭제할 수 없습니다. 계정 탭에서 다시 로그인해주세요.");
+      return;
+    }
     if (!window.confirm("보유 자산을 모두 삭제할까요?")) return;
-    syncRows([]);
-    await onSave([]);
+    try {
+      syncRows([]);
+      await onSave([]);
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const handleCsvFile = async (event) => {
@@ -584,6 +621,10 @@ export default function EntryPanel({
   };
 
   const handleBatchAdd = async (items) => {
+    if (!canPersistToSupabase) {
+      alert("로그인된 Supabase 세션이 없어서 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.");
+      return;
+    }
     if (!window.confirm(`총 ${items.length}개 종목을 반영할까요?`)) return;
     const updatedAt = new Date().toISOString();
 
@@ -600,11 +641,15 @@ export default function EntryPanel({
     });
 
     const nextRows = Object.values(merged);
-    syncRows(nextRows);
-    setImportResults([]);
-    setUpdatedTickers(nextUpdated);
-    setTimeout(() => setUpdatedTickers(new Set()), 5000);
-    await onSave(nextRows);
+    try {
+      syncRows(nextRows);
+      setImportResults([]);
+      setUpdatedTickers(nextUpdated);
+      setTimeout(() => setUpdatedTickers(new Set()), 5000);
+      await onSave(nextRows);
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   return (
@@ -630,7 +675,7 @@ export default function EntryPanel({
                 accept=".csv"
                 data-testid="csv-upload-input"
                 onChange={handleCsvFile}
-                disabled={importLoading}
+                disabled={importLoading || !canPersistToSupabase}
                 style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
               />
             </div>
@@ -650,11 +695,23 @@ export default function EntryPanel({
               </div>
             )}
 
+            {requiresLogin && (
+              <div style={{ marginBottom: "1rem", padding: "10px 12px", borderRadius: "10px", background: "#fcebeb", color: "#791f1f", fontSize: "12px" }}>
+                현재 Supabase 로그인 세션이 확인되지 않아 보유 자산을 저장할 수 없습니다. 설정의 계정 탭에서 로그인한 뒤 다시 시도해주세요.
+              </div>
+            )}
+
+            {syncStatus === "error" && (
+              <div style={{ marginBottom: "1rem", padding: "10px 12px", borderRadius: "10px", background: "#faeeda", color: "#633806", fontSize: "12px" }}>
+                Supabase와 동기화하는 중 오류가 있었습니다. 계정 상태와 네트워크를 확인한 뒤 다시 시도해주세요.
+              </div>
+            )}
+
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 180px", gap: "14px" }}>
                 <div>
                   <label style={labelStyle}>자산군</label>
-                  <select style={inputStyle} value={newItem.cls} onChange={(e) => updateNewItem("cls", e.target.value)} data-testid="manual-class-select">
+                  <select style={inputStyle} value={newItem.cls} onChange={(e) => updateNewItem("cls", e.target.value)} data-testid="manual-class-select" disabled={!canPersistToSupabase}>
                     {ASSET_CLASSES.map((assetClass) => (
                       <option key={assetClass} value={assetClass}>
                         {getAssetClassLabel(assetClass)}
@@ -672,20 +729,21 @@ export default function EntryPanel({
                     list="etf-list-main"
                     data-testid="manual-name-input"
                     placeholder="종목명을 검색하세요"
+                    disabled={!canPersistToSupabase}
                   />
                 </div>
 
                 {isNewCash ? (
                   <div>
                     <label style={labelStyle}>금액</label>
-                    <input type="number" style={{ ...inputStyle, fontWeight: 700 }} value={newItem.amt || ""} onChange={(e) => updateNewItem("amt", e.target.value)} data-testid="manual-amount-input" placeholder="금액 입력" />
+                    <input type="number" style={{ ...inputStyle, fontWeight: 700 }} value={newItem.amt || ""} onChange={(e) => updateNewItem("amt", e.target.value)} data-testid="manual-amount-input" placeholder="금액 입력" disabled={!canPersistToSupabase} />
                   </div>
                 ) : (
                   <div>
                     <label style={labelStyle}>수량 및 단가</label>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <input type="number" style={{ ...inputStyle, width: "72px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={(e) => updateNewItem("qty", e.target.value)} data-testid="manual-qty-input" placeholder="수량" />
-                      <input type="number" style={inputStyle} value={newItem.price || ""} onChange={(e) => updateNewItem("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" placeholder="현재가" />
+                      <input type="number" style={{ ...inputStyle, width: "72px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={(e) => updateNewItem("qty", e.target.value)} data-testid="manual-qty-input" placeholder="수량" disabled={!canPersistToSupabase} />
+                      <input type="number" style={inputStyle} value={newItem.price || ""} onChange={(e) => updateNewItem("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" placeholder="현재가" disabled={!canPersistToSupabase} />
                     </div>
                   </div>
                 )}
@@ -700,6 +758,7 @@ export default function EntryPanel({
                   onChange={(e) => updateNewItem("costAmt", e.target.value)}
                   data-testid="manual-cost-input"
                   placeholder="해당 종목에 투입한 매수원금"
+                  disabled={!canPersistToSupabase}
                 />
                 <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
                   개별 종목 손익 참고용 매수원금입니다.
@@ -712,9 +771,9 @@ export default function EntryPanel({
                     <>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <label style={{ ...labelStyle, marginBottom: 0 }}>티커 검색</label>
-                        <input style={{ ...inputStyle, width: "110px", padding: "6px 10px" }} value={newItem.code} onChange={(e) => updateNewItem("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={(e) => e.key === "Enter" && fetchNewItemPrice()} data-testid="manual-code-input" placeholder="예: 360750" />
+                        <input style={{ ...inputStyle, width: "110px", padding: "6px 10px" }} value={newItem.code} onChange={(e) => updateNewItem("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={(e) => e.key === "Enter" && fetchNewItemPrice()} data-testid="manual-code-input" placeholder="예: 360750" disabled={!canPersistToSupabase} />
                       </div>
-                      <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code} style={{ height: "32px" }}>
+                      <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code || !canPersistToSupabase} style={{ height: "32px" }}>
                         {loading ? "조회 중" : "시세 자동조회"}
                       </Btn>
                     </>
@@ -723,7 +782,7 @@ export default function EntryPanel({
                   )}
                 </div>
 
-                <Btn primary data-testid="manual-add-button" onClick={handleAddItem} style={{ height: "38px", padding: "0 24px", fontWeight: 700 }}>
+                <Btn primary data-testid="manual-add-button" onClick={handleAddItem} style={{ height: "38px", padding: "0 24px", fontWeight: 700 }} disabled={!canPersistToSupabase}>
                   종목 포트폴리오에 추가
                 </Btn>
               </div>
@@ -734,7 +793,7 @@ export default function EntryPanel({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
               <ST>보유 자산 내역</ST>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                {restoreInfo?.hasBackup && (
+                {restoreInfo?.hasBackup && canPersistToSupabase && (
                   <Btn
                     sm
                     onClick={() => {
@@ -746,7 +805,7 @@ export default function EntryPanel({
                     마지막 저장본 복원
                   </Btn>
                 )}
-                <Btn sm danger onClick={clearAll}>
+                <Btn sm danger onClick={clearAll} disabled={!canPersistToSupabase}>
                   전체 삭제
                 </Btn>
               </div>
@@ -818,12 +877,12 @@ export default function EntryPanel({
                         </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
                           <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
-                            <Btn sm onClick={() => setEditTarget({ item: row, idx: index })}>
-                              수정
-                            </Btn>
-                            <Btn sm danger onClick={() => handleRemove(index)}>
-                              삭제
-                            </Btn>
+                             <Btn sm onClick={() => setEditTarget({ item: row, idx: index })} disabled={!canPersistToSupabase}>
+                               수정
+                             </Btn>
+                             <Btn sm danger onClick={() => handleRemove(index)} disabled={!canPersistToSupabase}>
+                               삭제
+                             </Btn>
                           </div>
                         </td>
                       </tr>
@@ -859,9 +918,17 @@ export default function EntryPanel({
                   style={inputStyle}
                   value={principalInput}
                   onChange={(e) => setPrincipalInput(e.target.value)}
-                  onBlur={() => onPrincipalTotalChange?.(principalInput)}
+                  onBlur={async () => {
+                    if (!canPersistToSupabase) return;
+                    try {
+                      await onPrincipalTotalChange?.(principalInput);
+                    } catch (error) {
+                      alert(error.message);
+                    }
+                  }}
                   data-testid="portfolio-principal-input"
                   placeholder="이 연금에 투입한 총 원금"
+                  disabled={!canPersistToSupabase}
                 />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>

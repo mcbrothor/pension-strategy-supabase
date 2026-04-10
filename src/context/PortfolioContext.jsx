@@ -170,6 +170,7 @@ export function PortfolioProvider({ children }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDemo, setIsDemo] = useState(true);
   const [restoreInfo, setRestoreInfo] = useState({ hasBackup: false, savedAt: null });
+  const [syncStatus, setSyncStatus] = useState('auth_required');
   const [momentumTargets, setMomentumTargets] = useState({});
 
   // 정합성 수정: 모멘텀 API 실패 시 직전 유효 타깃으로 폴백
@@ -255,6 +256,7 @@ export function PortfolioProvider({ children }) {
     if (!user) return;
     try {
       setIsFetching(true);
+      setSyncStatus('syncing');
       const { data: holdings, error: hErr } = await supabase
         .from("holdings")
         .select("*")
@@ -337,19 +339,12 @@ export function PortfolioProvider({ children }) {
         }))
       };
 
-      const cachedPortfolio = readStoredPortfolio(user.id);
-      if (mappedHoldings.length === 0 && cachedPortfolio?.holdings?.length > 0) {
-        setPortfolio(cachedPortfolio);
-        setIsDemo(false);
-        refreshRestoreInfo(user.id);
-        return;
-      }
-
       setPortfolio(nextPortfolio);
       writeStoredPortfolio(user.id, nextPortfolio);
       refreshRestoreInfo(user.id);
 
       setIsDemo(false);
+      setSyncStatus('supabase');
     } catch (e) {
       console.error("Load Error:", e.message);
       const cachedPortfolio = readStoredPortfolio(user.id);
@@ -358,6 +353,7 @@ export function PortfolioProvider({ children }) {
         setIsDemo(false);
       }
       refreshRestoreInfo(user.id);
+      setSyncStatus('error');
     } finally {
       setIsFetching(false);
     }
@@ -367,21 +363,13 @@ export function PortfolioProvider({ children }) {
     const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
 
     if (!user) {
-      setPortfolio(prev => {
-        const nextPortfolio = {
-          ...prev,
-          total,
-          holdings: items.map(normalizeHolding),
-        };
-        writeStoredPortfolio(null, nextPortfolio);
-        refreshRestoreInfo(null);
-        return nextPortfolio;
-      });
-      return;
+      setSyncStatus('auth_required');
+      throw new Error('Supabase 로그인 세션이 없어 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.');
     }
 
     setIsSaving(true);
     try {
+      setSyncStatus('syncing');
       const saveDate = new Date().toISOString().split("T")[0];
       
       // 기존 방식(전체 삭제 후 삽입)의 데이터 유실 리스크 해결: Upsert
@@ -461,6 +449,7 @@ export function PortfolioProvider({ children }) {
       await loadPortfolio();
     } catch (e) {
       console.error("Save Error:", e.message);
+      setSyncStatus('error');
       throw e;
     } finally {
       setIsSaving(false);
@@ -469,27 +458,37 @@ export function PortfolioProvider({ children }) {
 
   const savePrincipalTotal = async (value) => {
     const normalized = Math.max(0, Number(value) || 0);
-    writeStoredPrincipalTotal(user?.id, normalized);
+    if (!user) {
+      setSyncStatus('auth_required');
+      throw new Error('Supabase 로그인 세션이 없어 원금을 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.');
+    }
+
+    writeStoredPrincipalTotal(user.id, normalized);
     setPortfolio(prev => {
       const nextPortfolio = {
         ...prev,
         principalTotal: normalized,
       };
-      writeStoredPortfolio(user?.id, nextPortfolio);
-      refreshRestoreInfo(user?.id || null);
+      writeStoredPortfolio(user.id, nextPortfolio);
+      refreshRestoreInfo(user.id);
       return nextPortfolio;
     });
+    setSyncStatus('supabase');
   };
 
   const restorePreviousPortfolio = React.useCallback(() => {
-    const targetUserId = user?.id || lastUserId || null;
-    const latestStoredPortfolio = refreshRestoreInfo(targetUserId);
+    if (!user) {
+      setSyncStatus('auth_required');
+      return false;
+    }
+
+    const latestStoredPortfolio = refreshRestoreInfo(user.id);
     if (!latestStoredPortfolio) return false;
 
     setPortfolio(latestStoredPortfolio);
-    setIsDemo(!targetUserId);
+    setIsDemo(false);
     return true;
-  }, [lastUserId, refreshRestoreInfo, user]);
+  }, [refreshRestoreInfo, user]);
 
   const updateStrategy = async (strategyId) => {
     const newStrat = STRATEGIES.find(it => it.id === strategyId);
@@ -542,24 +541,16 @@ export function PortfolioProvider({ children }) {
       return;
     }
 
-    const lastSignedInPortfolio = lastUserId ? readStoredPortfolio(lastUserId) : null;
-    if (lastSignedInPortfolio) {
-      setPortfolio(lastSignedInPortfolio);
-      setIsDemo(false);
-      refreshRestoreInfo(lastUserId);
-      return;
-    }
-
-    const storedPortfolio = readStoredPortfolio(null);
-    const storedPrincipalTotal = readStoredPrincipalTotal(null);
-    setPortfolio(
-      storedPortfolio || {
-        ...DEMO_PORTFOLIO,
-        principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
-        }
-    );
+    setPortfolio({
+      ...DEMO_PORTFOLIO,
+      holdings: [],
+      total: 0,
+      principalTotal: 0,
+      history: [],
+    });
     setIsDemo(true);
-    refreshRestoreInfo(null);
+    setRestoreInfo({ hasBackup: false, savedAt: null });
+    setSyncStatus('auth_required');
   }, [authLoading, user, lastUserId, refreshRestoreInfo]);
 
   return (
@@ -574,6 +565,7 @@ export function PortfolioProvider({ children }) {
       savePrincipalTotal,
       restorePreviousPortfolio,
       restoreInfo,
+      syncStatus,
       updateStrategy,
       fetchMomentumTargets, // 미리보기용 노출
       degradedMode,
