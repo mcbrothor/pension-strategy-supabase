@@ -10,7 +10,7 @@ test.describe("Portfolio Entry Flows", () => {
     });
   });
 
-  test("manual add updates holdings immediately", async ({ page }) => {
+  test("manual add stays persisted after reload and shows holding return", async ({ page }) => {
     await page.route("**/api/kis-price**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -39,11 +39,19 @@ test.describe("Portfolio Entry Flows", () => {
     await expect(page.getByTestId("holdings-table")).toContainText("E2E MOCK");
     await expect(page.getByTestId("holdings-table")).toContainText("999998");
     await expect(page.getByTestId("holdings-table")).toContainText("마지막 업데이트");
+    await expect(page.getByTestId("holding-return").last()).toContainText("11.1%");
     await expect(page.getByTestId("portfolio-principal-summary")).toContainText("5만");
     await expect(page.getByTestId("portfolio-principal-return")).toContainText("+");
 
     await page.getByTestId("tab-daily").click();
     await expect(page.locator("body")).toContainText("E2E MOCK");
+
+    await page.reload();
+    await page.getByTestId("tab-settings").click();
+    await page.getByTestId("settings-subtab-assets").click();
+    await expect(page.getByTestId("holdings-table")).toContainText("E2E MOCK");
+    await expect(page.getByTestId("holdings-table")).toContainText("999998");
+    await expect(page.getByTestId("holding-return").last()).toContainText("11.1%");
   });
 
   test("manual add resolves ticker from typed name", async ({ page }) => {

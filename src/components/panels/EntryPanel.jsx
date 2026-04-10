@@ -727,6 +727,15 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, onPrincipa
                 <tbody>
                   {rows.map((row, index) => {
                     const isUpdated = updatedTickers.has(row.code || row.etf);
+                    const rowCostAmt = Number(row.costAmt) || 0;
+                    const rowPnl = rowCostAmt > 0 ? (Number(row.amt) || 0) - rowCostAmt : null;
+                    const rowPnlPct = rowPnl != null ? (rowPnl / rowCostAmt) * 100 : null;
+                    const rowPnlColor =
+                      rowPnl == null
+                        ? "var(--text-dim)"
+                        : rowPnl >= 0
+                          ? "var(--alert-ok-color)"
+                          : "var(--alert-danger-color)";
 
                     return (
                       <tr key={`${row.code || row.etf}-${index}`} data-testid="holdings-row" style={{ background: isUpdated ? "rgba(5, 150, 105, 0.08)" : undefined }}>
@@ -749,7 +758,17 @@ export default function EntryPanel({ portfolio, onSave, onRowsChange, onPrincipa
                         </td>
                         <td style={{ textAlign: "right", padding: "16px 0" }}>{fmt(row.qty)}</td>
                         <td style={{ textAlign: "right", padding: "16px 0", color: "var(--text-dim)" }}>{fmt(row.price)}</td>
-                        <td style={{ textAlign: "right", padding: "16px 0", fontWeight: 700 }}>{fmt(row.amt)}</td>
+                        <td style={{ textAlign: "right", padding: "16px 0" }}>
+                          <div style={{ fontWeight: 700 }}>{fmt(row.amt)}</div>
+                          {rowPnl != null && (
+                            <div
+                              style={{ fontSize: "11px", marginTop: "4px", color: rowPnlColor }}
+                              data-testid="holding-return"
+                            >
+                              {`${rowPnl >= 0 ? "+" : "-"}${fmt(Math.abs(rowPnl))} (${rowPnlPct >= 0 ? "+" : ""}${rowPnlPct.toFixed(1)}%)`}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
                           <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
                             <Btn sm onClick={() => setEditTarget({ item: row, idx: index })}>

@@ -6,9 +6,14 @@ import { computeTargets } from '../services/momentumEngine.js';
 
 const PortfolioContext = createContext();
 const PRINCIPAL_STORAGE_PREFIX = 'portfolio_principal_total';
+const PORTFOLIO_STORAGE_PREFIX = 'portfolio_state';
 
 function getPrincipalStorageKey(userId) {
   return `${PRINCIPAL_STORAGE_PREFIX}:${userId || 'demo'}`;
+}
+
+function getPortfolioStorageKey(userId) {
+  return `${PORTFOLIO_STORAGE_PREFIX}:${userId || 'demo'}`;
 }
 
 function readStoredPrincipalTotal(userId) {
@@ -22,6 +27,57 @@ function readStoredPrincipalTotal(userId) {
 function writeStoredPrincipalTotal(userId, value) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(getPrincipalStorageKey(userId), String(Number(value) || 0));
+}
+
+function normalizeHolding(item = {}) {
+  return {
+    ...item,
+    qty: Number(item.qty) || 0,
+    price: Number(item.price) || 0,
+    amt: Number(item.amt) || 0,
+    costAmt: Number(item.costAmt) || 0,
+    target: Number(item.target) || 0,
+    updatedAt: item.updatedAt || null,
+  };
+}
+
+function readStoredPortfolio(userId) {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(getPortfolioStorageKey(userId));
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const holdings = Array.isArray(parsed?.holdings) ? parsed.holdings.map(normalizeHolding) : [];
+    const total = holdings.reduce((sum, item) => sum + (Number(item.amt) || 0), 0);
+    const principalTotal =
+      Number(parsed?.principalTotal) ||
+      holdings.reduce((sum, item) => sum + (Number(item.costAmt) || 0), 0) ||
+      DEMO_PORTFOLIO.principalTotal;
+
+    return {
+      ...DEMO_PORTFOLIO,
+      ...parsed,
+      total,
+      principalTotal,
+      holdings,
+      history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
+    };
+  } catch (error) {
+    console.error('Stored portfolio parse error:', error);
+    return null;
+  }
+}
+
+function writeStoredPortfolio(userId, portfolio) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(
+    getPortfolioStorageKey(userId),
+    JSON.stringify({
+      ...portfolio,
+      holdings: Array.isArray(portfolio?.holdings) ? portfolio.holdings.map(normalizeHolding) : [],
+    })
+  );
 }
 
 /**
@@ -189,7 +245,7 @@ export function PortfolioProvider({ children }) {
         writeStoredPrincipalTotal(user.id, holdingsPrincipalTotal);
       }
 
-      setPortfolio({
+      const nextPortfolio = {
         ...DEMO_PORTFOLIO,
         strategy: strategyId,
         total: total,
@@ -201,18 +257,40 @@ export function PortfolioProvider({ children }) {
           strategy: s.strategy_id,
           weights: s.weights
         }))
-      });
+      };
+
+      setPortfolio(nextPortfolio);
+      writeStoredPortfolio(user.id, nextPortfolio);
 
       setIsDemo(false);
     } catch (e) {
       console.error("Load Error:", e.message);
+      const cachedPortfolio = readStoredPortfolio(user.id);
+      if (cachedPortfolio) {
+        setPortfolio(cachedPortfolio);
+        setIsDemo(false);
+      }
     } finally {
       setIsFetching(false);
     }
   };
 
   const saveHoldings = async (items) => {
-    if (!user) return;
+    const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
+
+    if (!user) {
+      setPortfolio(prev => {
+        const nextPortfolio = {
+          ...prev,
+          total,
+          holdings: items.map(normalizeHolding),
+        };
+        writeStoredPortfolio(null, nextPortfolio);
+        return nextPortfolio;
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const saveDate = new Date().toISOString().split("T")[0];
@@ -252,7 +330,6 @@ export function PortfolioProvider({ children }) {
         if (error) throw error;
       }
 
-      const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
       const weights = {};
       items.forEach(h => {
         if (total > 0 && h.cls) {
@@ -264,14 +341,33 @@ export function PortfolioProvider({ children }) {
         weights[k] = Math.round(weights[k] * 10) / 10;
       });
 
-      const { error: snapshotError } = await supabase.from('snapshots').insert({
-        user_id: user.id,
-        date: saveDate,
-        strategy_id: portfolio.strategy,
-        total_amt: total,
-        weights: weights
-      });
-      if (snapshotError) throw snapshotError;
+      const { data: existingSnapshot, error: snapshotLookupError } = await supabase
+        .from('snapshots')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('date', saveDate)
+        .maybeSingle();
+
+      if (snapshotLookupError) {
+        console.error('Snapshot Lookup Error:', snapshotLookupError.message);
+      } else {
+        const snapshotPayload = {
+          user_id: user.id,
+          date: saveDate,
+          strategy_id: portfolio.strategy,
+          total_amt: total,
+          weights,
+        };
+
+        const snapshotQuery = existingSnapshot?.id
+          ? supabase.from('snapshots').update(snapshotPayload).eq('id', existingSnapshot.id)
+          : supabase.from('snapshots').insert(snapshotPayload);
+
+        const { error: snapshotError } = await snapshotQuery;
+        if (snapshotError) {
+          console.error('Snapshot Save Error:', snapshotError.message);
+        }
+      }
 
       await loadPortfolio();
     } catch (e) {
@@ -285,10 +381,14 @@ export function PortfolioProvider({ children }) {
   const savePrincipalTotal = async (value) => {
     const normalized = Math.max(0, Number(value) || 0);
     writeStoredPrincipalTotal(user?.id, normalized);
-    setPortfolio(prev => ({
-      ...prev,
-      principalTotal: normalized
-    }));
+    setPortfolio(prev => {
+      const nextPortfolio = {
+        ...prev,
+        principalTotal: normalized,
+      };
+      writeStoredPortfolio(user?.id, nextPortfolio);
+      return nextPortfolio;
+    });
   };
 
   const updateStrategy = async (strategyId) => {
@@ -337,11 +437,14 @@ export function PortfolioProvider({ children }) {
   useEffect(() => {
     if (user) loadPortfolio();
     else {
+      const storedPortfolio = readStoredPortfolio(null);
       const storedPrincipalTotal = readStoredPrincipalTotal(null);
-      setPortfolio({
-        ...DEMO_PORTFOLIO,
-        principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
-      });
+      setPortfolio(
+        storedPortfolio || {
+          ...DEMO_PORTFOLIO,
+          principalTotal: storedPrincipalTotal != null ? storedPrincipalTotal : DEMO_PORTFOLIO.principalTotal
+        }
+      );
       setIsDemo(true);
     }
   }, [user]);
