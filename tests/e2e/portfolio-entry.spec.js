@@ -44,30 +44,46 @@ test.describe("Portfolio Entry Auth Guard", () => {
 });
 
 test.describe("Portfolio Entry Save Logic", () => {
-  test("new holdings receive client ids before save", async ({ page }) => {
-    await page.addInitScript(() => {
-      window.crypto.randomUUID = () => "test-id-2";
-    });
-
+  test("existing and new holdings are split into update and insert payloads", async ({ page }) => {
     await page.goto("/");
 
-    const generated = await page.evaluate(() => {
-      const item = {
-        etf: "신규 종목",
-        code: "NEW001",
-        cls: "미국주식",
-        qty: 1,
-        price: 1000,
-        amt: 1000,
-        costAmt: 900,
-      };
+    const payloads = await page.evaluate(() => {
+      const items = [
+        { id: 1, code: "EXIST1", etf: "기존 종목", cls: "미국주식", qty: 1, price: 1000, amt: 1000, costAmt: 900 },
+        { code: "NEW001", etf: "신규 종목", cls: "국내주식", qty: 2, price: 2000, amt: 4000, costAmt: 3500 },
+      ];
 
-      return {
-        ...item,
-        id: item.id || window.crypto.randomUUID(),
-      };
+      const normalized = items
+        .filter((it) => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0))
+        .map((it) => {
+          const payload = {
+            user_id: "user-1",
+            ticker: it.code,
+            name: it.etf || "",
+            asset_class: it.cls || "",
+            quantity: Number(it.qty) || 0,
+            current_price: Number(it.price) || 0,
+            cost_amt: Number(it.costAmt) || 0,
+            amount: Number(it.amt) || 0,
+            updated_at: "2026-04-11T00:00:00.000Z",
+          };
+          if (it.id) payload.id = it.id;
+          return payload;
+        });
+
+      const existingItems = normalized.filter((it) => it.id != null);
+      const newItems = normalized
+        .map(({ id, ...rest }) => (id != null ? { id, ...rest } : rest))
+        .filter((it) => it.id == null)
+        .map(({ id, ...rest }) => rest);
+
+      return { existingItems, newItems };
     });
 
-    expect(generated.id).toBe("test-id-2");
+    expect(payloads.existingItems).toHaveLength(1);
+    expect(payloads.existingItems[0].id).toBe(1);
+    expect(payloads.newItems).toHaveLength(1);
+    expect(payloads.newItems[0].ticker).toBe("NEW001");
+    expect(payloads.newItems[0].id).toBeUndefined();
   });
 });

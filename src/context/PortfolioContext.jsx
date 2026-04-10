@@ -384,7 +384,7 @@ export function PortfolioProvider({ children }) {
         if (error) throw error;
       }
       
-      const upsertItems = items
+      const normalizedItems = items
         .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0))
         .map(it => {
           const payload = {
@@ -402,8 +402,17 @@ export function PortfolioProvider({ children }) {
           return payload;
         });
 
-      if (upsertItems.length > 0) {
-        const { error } = await supabase.from('holdings').upsert(upsertItems, { onConflict: 'id' });
+      const existingItems = normalizedItems.filter(it => it.id != null);
+      const newItems = normalizedItems.map(({ id, ...rest }) => (id != null ? { id, ...rest } : rest)).filter(it => it.id == null);
+
+      if (existingItems.length > 0) {
+        const { error } = await supabase.from('holdings').upsert(existingItems, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      if (newItems.length > 0) {
+        const insertPayload = newItems.map(({ id, ...rest }) => rest);
+        const { error } = await supabase.from('holdings').insert(insertPayload);
         if (error) throw error;
       }
 

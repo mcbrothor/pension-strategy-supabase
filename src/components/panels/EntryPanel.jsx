@@ -117,7 +117,6 @@ function resolveAssetByName(name, tickerMap = {}, krEtfs = []) {
 
 function makeEmptyItem() {
   return {
-    id: null,
     etf: "",
     code: "",
     cls: DEFAULT_ASSET_CLASS,
@@ -514,13 +513,12 @@ export default function EntryPanel({
     const nextItem = resolved
       ? {
           ...newItem,
-          id: newItem.id || crypto.randomUUID(),
           etf: resolved.name,
           code: resolved.ticker,
           cls: resolved.assetClass || newItem.cls,
           updatedAt,
         }
-      : { ...newItem, id: newItem.id || crypto.randomUUID(), updatedAt };
+      : { ...newItem, updatedAt };
 
     if (!nextItem.cls) return alert("자산군을 선택하세요.");
     if (nextItem.cls !== CASH_ASSET_CLASS && !nextItem.code) {
