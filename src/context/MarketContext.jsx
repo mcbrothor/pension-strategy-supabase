@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculatePearsonCorr } from '../utils/calculators';
 
@@ -139,7 +139,7 @@ export function MarketProvider({ children }) {
     setCorrLoading(true);
     try {
       const requests = holdings.map(async (holding) => {
-        const isOverseas = ['誘멸뎅二쇱떇', '?댁쇅梨꾧텒', '?먯옄??', '湲?'].includes(holding.cls);
+        const isOverseas = ['미국주식', '해외채권', '원자재', '금'].includes(holding.cls);
         const res = await fetch(`/api/kis-history?ticker=${holding.code}&type=${isOverseas ? 'overseas' : 'domestic'}`);
         const data = await res.json();
         if (data.prices && data.prices.length > 10) {
