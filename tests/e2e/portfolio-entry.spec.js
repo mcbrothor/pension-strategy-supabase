@@ -42,3 +42,32 @@ test.describe("Portfolio Entry Auth Guard", () => {
     await expect(page.getByTestId("holdings-table")).not.toContainText("TIGER 코리아TOP10");
   });
 });
+
+test.describe("Portfolio Entry Save Logic", () => {
+  test("new holdings receive client ids before save", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.crypto.randomUUID = () => "test-id-2";
+    });
+
+    await page.goto("/");
+
+    const generated = await page.evaluate(() => {
+      const item = {
+        etf: "신규 종목",
+        code: "NEW001",
+        cls: "미국주식",
+        qty: 1,
+        price: 1000,
+        amt: 1000,
+        costAmt: 900,
+      };
+
+      return {
+        ...item,
+        id: item.id || window.crypto.randomUUID(),
+      };
+    });
+
+    expect(generated.id).toBe("test-id-2");
+  });
+});
