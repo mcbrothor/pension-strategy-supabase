@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Card, ST, Badge, Btn } from "../common/index.jsx";
 import { fmt, fmtP } from "../../utils/formatters.js";
-import { getStrat } from "../../utils/helpers.js";
-import { RISK_DATA, ASSET_COLORS } from "../../constants/index.js";
-import { generateRiskReport } from "../../services/riskEngine.js";
+import { ASSET_COLORS } from "../../constants/index.js";
+import { usePortfolioRiskReport } from "../../hooks/usePortfolioRiskReport.js";
 
 // Recharts for MDD chart
 import {
@@ -138,71 +137,26 @@ function CalculationModal({ item, onClose }) {
  */
 export default function RiskPanel({ portfolio }) {
   const [period, setPeriod] = useState("1Y"); // '1Y' | '3Y' | 'all'
-  const [historicalData, setHistoricalData] = useState(null);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [calculationDetail, setCalculationDetail] = useState(null);
-
-  const s = getStrat(portfolio.strategy);
-  const total = portfolio.holdings.reduce((sum, h) => sum + (Number(h.amt) || 0), 0) || portfolio.total || 0;
-  const holdings = portfolio.holdings.map(h => {
-    const cur = total > 0 ? Math.round((h.amt || 0) / total * 1000) / 10 : 0;
-    return { ...h, cur };
-  });
-  const historyEligibleHoldings = holdings.filter(h => h.code && h.code !== "CASH" && h.cls !== "현금MMF");
-
-  const isOverseasTicker = (ticker) => {
-    const code = String(ticker || "").trim().toUpperCase();
-    if (!code) return false;
-    return !/^[0-9A-Z]{6}$/.test(code);
-  };
-
-  useEffect(() => {
-    if (!historyEligibleHoldings || historyEligibleHoldings.length === 0) return;
-    let isMounted = true;
-    
-    const fetchHistory = async () => {
-      setLoadingHistory(true);
-      try {
-        const promises = historyEligibleHoldings.map(async h => {
-           const isOverseas = isOverseasTicker(h.code);
-           try {
-             const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
-             if (!res.ok) return null;
-             return await res.json();
-           } catch (e) {
-             console.warn(`History fetch failed for ${h.code}:`, e.message);
-             return null;
-           }
-        });
-        
-        const results = await Promise.allSettled(promises);
-        const validData = results
-          .filter(r => r.status === 'fulfilled' && r.value)
-          .map(r => r.value)
-          .filter(d => d.prices && d.prices.length >= 2);
-        
-        if (isMounted) setHistoricalData(validData);
-      } catch (e) {
-        console.error("리스크 패널 히스토리 로드 실패:", e.message);
-      } finally {
-        if (isMounted) setLoadingHistory(false);
-      }
-    };
-    
-    fetchHistory();
-    return () => { isMounted = false; };
-  }, [portfolio.strategy, historyEligibleHoldings.map(h => h.code).join("|")]);
-
-  const annualExpRet = s?.annualRet?.base || 0.08;
-  const report = generateRiskReport(holdings, annualExpRet, period, historicalData);
-  const validHistoryCount = historicalData?.length || 0;
+  const {
+    annualExpRet,
+    excludedHoldings,
+    historyEligibleHoldings,
+    loadingHistory,
+    minimumHistoryCount,
+    report,
+    targetCount,
+    total,
+    validHistoryCount,
+  } = usePortfolioRiskReport(portfolio, period);
   const riskModeText = report.calcMode === "realized" ? "실현 데이터 기반" : "자산군 평균값 추정 기반";
   const riskInputs = [
     `현재 보유자산 합계: ${fmt(total)}`,
     `보유금액 비중: 각 종목 평가금액 / 보유자산 합계`,
     report.calcMode === "realized"
-      ? `과거 가격 이력: 현금 제외 ${validHistoryCount}개 종목 반영`
+      ? `과거 가격 이력: 현금 제외 ${validHistoryCount}개 종목 반영, 공통 ${report.dataPoints || 0}개 일간수익률 사용`
       : "과거 가격 이력이 부족한 경우 자산군별 평균 변동성 사용",
+    `선택 기간: ${period === "all" ? "전체" : period} (목표 ${Math.max(targetCount - 1, 0)}개 일간수익률, 최소 ${minimumHistoryCount}개 종가 필요)`,
     `전략 기대수익률: ${(annualExpRet * 100).toFixed(1)}%`,
     "무위험수익률: 3.0%",
   ];
@@ -219,7 +173,7 @@ export default function RiskPanel({ portfolio }) {
         report.calcMode === "realized"
           ? "각 종목의 일간 수익률을 현재 보유금액 비중으로 합산해 포트폴리오 일간 수익률을 만들고, 표준편차를 연율화합니다."
           : "자산군별 평균 변동성에 현재 보유금액 비중을 곱해 합산합니다.",
-      formula: report.calcMode === "realized" ? "σ = stdev(Σ 일간수익률_i × 현재비중_i) × √252" : "σ = Σ(자산군 변동성_i × 현재비중_i)",
+      formula: report.calcMode === "realized" ? "σ = stdev(Σ 일간수익률_i × 현재평가금액비중_i) × √252" : "σ = Σ(자산군 변동성_i × 현재평가금액비중_i)",
       inputs: riskInputs,
     },
     {
@@ -273,7 +227,7 @@ export default function RiskPanel({ portfolio }) {
         report.calcMode === "realized"
           ? "과거 포트폴리오 일간수익률 중 최악의 5% 구간 평균 손실을 연율화합니다."
           : "정규분포 근사를 사용해 변동성에 95% CVaR 승수를 곱합니다.",
-      formula: report.calcMode === "realized" ? "CVaR95 = abs(mean(최악 5% 일간수익률)) × √252" : "CVaR95 ≈ 변동성 × 2.063",
+      formula: report.calcMode === "realized" ? "CVaR95 = abs(mean(최악 5% 포트폴리오 일간수익률)) × √252" : "CVaR95 ≈ 변동성 × 2.063",
       inputs: riskInputs,
     },
   ];
@@ -332,19 +286,19 @@ export default function RiskPanel({ portfolio }) {
         ))}
       </div>
 
-      {loadingHistory && <div style={{ fontSize: 12, padding: 10, color: "var(--text-dim)" }}>실시간 가격 데이터를 수집중입니다...</div>}
+      {loadingHistory && <div style={{ fontSize: 12, padding: 10, color: "var(--text-dim)" }}>KIS 가격 데이터를 수집중입니다... ({period === "all" ? "전체" : period} 목표 {Math.max(targetCount - 1, 0)}개 일간수익률)</div>}
       {!loadingHistory && (
         <div style={{ fontSize: 11, padding: "8px 10px", marginBottom: 12, borderRadius: 8, background: "var(--bg-main)", color: "var(--text-dim)", lineHeight: 1.6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
             <span>
               <span data-testid="risk-calc-basis">
-              계산 기준: {report.calcMode === "realized" ? `실현 데이터 기반 (${validHistoryCount}개 종목 가격 반영)` : "자산군 평균값 추정 기반"}
+              계산 기준: {report.calcMode === "realized" ? `실현 데이터 기반 (${validHistoryCount}개 종목 가격 반영, 공통 ${report.dataPoints || 0}개 일간수익률)` : "자산군 평균값 추정 기반"}
               {report.calcMode !== "realized" && " · KIS 과거 시세가 부족하거나 조회 실패 시 추정치로 표시됩니다."}
               </span>
             </span>
             {historyEligibleHoldings.length > validHistoryCount && (
               <span style={{ color: "var(--alert-warn-color)", fontWeight: 500 }}>
-                제외된 자산: {historyEligibleHoldings.filter(h => !historicalData?.find(d => d.ticker === h.code)).map(h => h.etf || h.code).join(", ")}
+                제외된 자산: {excludedHoldings.map(h => h.etf || h.code).join(", ")}
               </span>
             )}
           </div>

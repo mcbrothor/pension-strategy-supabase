@@ -13,69 +13,88 @@ export default function KPIStrip({
   total, totalDiff, vix, vixMeta, avgCorrelation,
   vol, sharpe, sortino, cvar, mdd, calmar,
   fearGreedScore, yieldSpreadVal,
-  dataGrade
+  dataGrade,
+  riskCalcMode,
+  riskLoading,
+  riskDataPoints
 }) {
+  const riskSub = riskLoading
+    ? "계산 중"
+    : riskCalcMode === "realized"
+      ? `실현 ${riskDataPoints || 0}일`
+      : "추정";
+
   const items = [
     {
+      id: "total",
       label: "총 자산",
       value: total ? `${(total / 10000).toLocaleString()}만` : "—",
       sub: totalDiff != null ? (totalDiff >= 0 ? `▲${Math.abs(totalDiff / 10000).toLocaleString()}만` : `▼${Math.abs(totalDiff / 10000).toLocaleString()}만`) : null,
       subColor: totalDiff >= 0 ? "var(--alert-ok-color)" : "var(--alert-info-color)",
     },
     {
+      id: "vix",
       label: "VIX",
       value: vix != null ? vix.toFixed(1) : "—",
       sub: vixMeta ? getFreshnessLabel(vixMeta.freshness) : null,
       subColor: vix > 25 ? "var(--alert-danger-color)" : "var(--text-dim)",
     },
     {
+      id: "vol",
       label: "변동성(σ)",
       value: vol != null ? `${vol.toFixed(1)}%` : "—",
-      sub: vol < 8 ? "보수적" : vol < 15 ? "중립적" : "공격적",
+      sub: riskSub,
       subColor: vol < 15 ? "var(--alert-ok-color)" : "var(--alert-warn-color)",
     },
     {
+      id: "sharpe",
       label: "샤프",
       value: sharpe != null ? sharpe.toFixed(2) : "—",
-      sub: sharpe > 0.8 ? "매우 우수" : sharpe > 0.4 ? "양호" : "보통",
+      sub: riskSub,
       subColor: sharpe > 0.4 ? "var(--alert-ok-color)" : "var(--text-dim)",
     },
     {
       // 소르티노: 하락 리스크만 고려한 효율성 → 연금처럼 "잃는 것"이 치명적인 경우 핵심
+      id: "sortino",
       label: "소르티노",
       value: sortino != null ? sortino.toFixed(2) : "—",
-      sub: sortino > 1.0 ? "우수" : sortino > 0.5 ? "양호" : "개선 필요",
+      sub: riskSub,
       subColor: sortino > 0.5 ? "var(--alert-ok-color)" : "var(--alert-warn-color)",
     },
     {
       // CVaR(95%): 최악의 5% 시나리오 평균 손실 → "최악의 경우" 대비
+      id: "cvar",
       label: "CVaR",
       value: cvar != null ? `-${cvar.toFixed(1)}%` : "—",
-      sub: "95% 최대손실",
+      sub: riskSub,
       subColor: cvar > 20 ? "var(--alert-danger-color)" : "var(--text-dim)",
     },
     {
       // MDD: 현재 최대 낙폭 → 포트폴리오 건강 상태 직관적 파악
+      id: "mdd",
       label: "MDD",
       value: mdd != null ? `${mdd.toFixed(1)}%` : "—",
-      sub: mdd < -20 ? "⚠ 경고" : mdd < -10 ? "주의" : "정상",
+      sub: riskSub,
       subColor: mdd < -20 ? "var(--alert-danger-color)" : mdd < -10 ? "var(--alert-warn-color)" : "var(--alert-ok-color)",
     },
     {
       // 칼마: 수익률/MDD → 고통 대비 얼마나 벌었나
+      id: "calmar",
       label: "칼마",
       value: calmar != null ? calmar.toFixed(2) : "—",
-      sub: calmar > 1.5 ? "우수" : calmar > 0.5 ? "양호" : "관리 필요",
+      sub: riskSub,
       subColor: calmar > 0.5 ? "var(--alert-ok-color)" : "var(--alert-warn-color)",
     },
     {
+      id: "correlation",
       label: "상관계수",
       value: avgCorrelation != null ? avgCorrelation.toFixed(2) : "—",
-      sub: avgCorrelation > 0.7 ? "⚠ 높음" : avgCorrelation > 0.5 ? "보통" : "양호",
+      sub: avgCorrelation != null ? riskSub : null,
       subColor: avgCorrelation > 0.7 ? "var(--alert-danger-color)" : "var(--alert-ok-color)",
     },
     {
       // Fear & Greed: 투자 심리 복합 지표
+      id: "fear-greed",
       label: "F&G",
       value: fearGreedScore != null ? Math.round(fearGreedScore).toString() : "—",
       sub: fearGreedScore != null ? (fearGreedScore <= 24 ? "극단적 공포" : fearGreedScore <= 44 ? "공포" : fearGreedScore <= 55 ? "중립" : fearGreedScore <= 74 ? "탐욕" : "극단적 탐욕") : null,
@@ -83,12 +102,14 @@ export default function KPIStrip({
     },
     {
       // 수익률 곡선: 경기 사이클 지표
+      id: "yield-spread",
       label: "10Y-2Y",
       value: yieldSpreadVal != null ? `${yieldSpreadVal >= 0 ? "+" : ""}${yieldSpreadVal.toFixed(2)}%` : "—",
       sub: yieldSpreadVal != null ? (yieldSpreadVal < 0 ? "⚠ 역전" : yieldSpreadVal < 0.5 ? "평탄화" : "정상") : null,
       subColor: yieldSpreadVal != null ? (yieldSpreadVal < 0 ? "var(--alert-danger-color)" : yieldSpreadVal < 0.5 ? "var(--alert-warn-color)" : "var(--alert-ok-color)") : "var(--text-dim)",
     },
     {
+      id: "data-grade",
       label: "신뢰도",
       value: dataGrade || "—",
       sub: dataGrade ? (dataGrade === 'A' ? '정상' : dataGrade === 'B' ? '주의' : '경고') : null,
@@ -99,7 +120,7 @@ export default function KPIStrip({
   return (
     <div className="kpi-strip">
       {items.map((item, i) => (
-        <div key={i} className="kpi-strip-item">
+        <div key={i} className="kpi-strip-item" data-testid={`kpi-${item.id}`}>
           <div style={{ fontSize: "var(--density-font-sm)", color: "var(--text-dim)", marginBottom: 2 }}>{item.label}</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)" }}>{item.value}</div>
           {item.sub && (

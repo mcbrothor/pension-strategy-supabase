@@ -18,6 +18,18 @@ const std = (arr) => {
   const m = mean(arr);
   return Math.sqrt(arr.reduce((a, b) => a + Math.pow(b - m, 2), 0) / (arr.length - 1));
 };
+const pearson = (x, y) => {
+  if (!x || !y || x.length !== y.length || x.length < 2) return null;
+  const mx = mean(x);
+  const my = mean(y);
+  const numerator = x.reduce((acc, value, index) => acc + (value - mx) * (y[index] - my), 0);
+  const denominator = Math.sqrt(
+    x.reduce((acc, value) => acc + Math.pow(value - mx, 2), 0) *
+    y.reduce((acc, value) => acc + Math.pow(value - my, 2), 0)
+  );
+  if (denominator === 0) return 0;
+  return numerator / denominator;
+};
 
 function getHoldingWeight(holding, totalAmount = 0) {
   const amount = Number(holding?.amt) || 0;
@@ -40,6 +52,110 @@ function prepareWeightedHoldings(holdings = []) {
       weight: getHoldingWeight(h, totalAmount),
     }))
     .filter(h => h.weight > 0);
+}
+
+function buildAssetReturnSeries(weightedHoldings, historicalData = []) {
+  const priceHistory = Array.isArray(historicalData) ? historicalData : [];
+  const series = {};
+
+  for (const h of weightedHoldings) {
+    if (h.cls === '현금MMF' || h.code === 'CASH') continue;
+    const data = priceHistory.find(d => d.ticker === h.code);
+    if (!data || !Array.isArray(data.prices) || data.prices.length < 2) continue;
+
+    const returns = [];
+    for (let i = 1; i < data.prices.length; i++) {
+      const prev = Number(data.prices[i - 1]);
+      const next = Number(data.prices[i]);
+      if (!Number.isFinite(prev) || !Number.isFinite(next) || prev <= 0) continue;
+      returns.push({
+        date: Array.isArray(data.dates) ? data.dates[i] : null,
+        value: (next - prev) / prev,
+      });
+    }
+
+    if (returns.length >= 2) series[h.code] = returns;
+  }
+
+  return series;
+}
+
+function alignPortfolioReturns(weightedHoldings, assetReturns) {
+  const activeHoldings = weightedHoldings.filter(h => assetReturns[h.code]?.length >= 2);
+  if (activeHoldings.length === 0) return [];
+
+  const hasDates = activeHoldings.every(h => assetReturns[h.code].every(item => item.date));
+  if (hasDates) {
+    const dateSets = activeHoldings.map(h => new Set(assetReturns[h.code].map(item => item.date)));
+    const commonDates = [...dateSets[0]]
+      .filter(date => dateSets.every(set => set.has(date)))
+      .sort();
+
+    return commonDates.map(date => {
+      let dailyRet = 0;
+      for (const h of activeHoldings) {
+        const item = assetReturns[h.code].find(row => row.date === date);
+        if (item) dailyRet += h.weight * item.value;
+      }
+      return dailyRet;
+    });
+  }
+
+  const minLen = Math.min(...activeHoldings.map(h => assetReturns[h.code].length));
+  if (!Number.isFinite(minLen) || minLen < 2) return [];
+
+  const portDailyReturns = [];
+  for (let i = 0; i < minLen; i++) {
+    let dailyRet = 0;
+    for (const h of activeHoldings) {
+      const returns = assetReturns[h.code];
+      const retIdx = returns.length - minLen + i;
+      dailyRet += h.weight * returns[retIdx].value;
+    }
+    portDailyReturns.push(dailyRet);
+  }
+  return portDailyReturns;
+}
+
+export function calculateAverageCorrelationFromHistory(holdings, historicalData) {
+  const weightedHoldings = prepareWeightedHoldings(holdings);
+  const assetReturns = buildAssetReturnSeries(weightedHoldings, historicalData);
+  const activeHoldings = weightedHoldings.filter(h => assetReturns[h.code]?.length >= 2);
+  if (activeHoldings.length < 2) return null;
+
+  const correlations = [];
+  for (let i = 0; i < activeHoldings.length; i += 1) {
+    for (let j = i + 1; j < activeHoldings.length; j += 1) {
+      const left = assetReturns[activeHoldings[i].code];
+      const right = assetReturns[activeHoldings[j].code];
+      const hasDates = left.every(item => item.date) && right.every(item => item.date);
+
+      if (hasDates) {
+        const rightByDate = new Map(right.map(item => [item.date, item.value]));
+        const alignedLeft = [];
+        const alignedRight = [];
+        left.forEach(item => {
+          if (rightByDate.has(item.date)) {
+            alignedLeft.push(item.value);
+            alignedRight.push(rightByDate.get(item.date));
+          }
+        });
+        const corr = pearson(alignedLeft, alignedRight);
+        if (corr !== null) correlations.push(corr);
+        continue;
+      }
+
+      const minLen = Math.min(left.length, right.length);
+      const corr = pearson(
+        left.slice(-minLen).map(item => item.value),
+        right.slice(-minLen).map(item => item.value)
+      );
+      if (corr !== null) correlations.push(corr);
+    }
+  }
+
+  if (correlations.length === 0) return null;
+  return Math.round(mean(correlations) * 100) / 100;
 }
 
 // =============================================================================
@@ -182,45 +298,28 @@ export function calculateRealizedRisk(holdings, historicalData, expectedReturn =
   }
 
   const weightedHoldings = prepareWeightedHoldings(holdings);
+  const assetReturns = buildAssetReturnSeries(weightedHoldings, historicalData);
+  const usedAssetCount = Object.keys(assetReturns).length;
+  const portDailyReturns = alignPortfolioReturns(weightedHoldings, assetReturns);
 
-  // 1. 각 자산별 일간 수익률 시계열화 (길이가 가장 짧은 데이터에 맞춤)
-  const assetReturns = {};
-  let minLen = Infinity;
-
-  for (const h of weightedHoldings) {
-    if (h.cls === '현금MMF' || h.code === 'CASH') continue;
-    const data = historicalData.find(d => d.ticker === h.code);
-    if (!data || data.prices.length < 2) continue; // 데이터 부족
-    
-    // prices 배열이 과거 -> 최신 (인덱스 증가할수록 최신)이라고 가정. (api/kis-history는 reverse()하여 넘겨줌)
-    const returns = [];
-    for (let i = 1; i < data.prices.length; i++) {
-       returns.push((data.prices[i] - data.prices[i-1]) / data.prices[i-1]);
-    }
-    assetReturns[h.code] = returns;
-    minLen = Math.min(minLen, returns.length);
+  if (portDailyReturns.length < 2) {
+    return {
+      vol: 0,
+      sharpe: 0,
+      sortino: 0,
+      cvar: 0,
+      mdd: 0,
+      calcMode: 'error_insufficient_data',
+      dailyReturns: [],
+      dataPoints: 0,
+      assetCount: usedAssetCount,
+      warnings: ["과거 시세 데이터가 부족하여 실현 리스크를 계산할 수 없습니다."]
+    };
   }
 
-  if (minLen === Infinity || minLen < 2) {
-    return { vol: 0, sharpe: 0, sortino: 0, cvar: 0, mdd: 0, calcMode: 'error_insufficient_data', dailyReturns: [], warnings: ["과거 시세 데이터가 부족하여 실현 리스크를 계산할 수 없습니다."] };
-  }
-
-  // 2. 포트폴리오 일간 수익률 계산 (최근 minLen일치)
-  const portDailyReturns = [];
   let portCumReturns = [1]; // MDD 전용 (1을 기준점으로)
-
-  for (let i = 0; i < minLen; i++) {
-    let dailyRet = 0;
-    for (const h of weightedHoldings) {
-      if (h.cls === '현금MMF' || h.code === 'CASH') continue;
-      if (assetReturns[h.code]) {
-        // 시계열 끝(가장 최근 데이터)을 맞추기 위해 뒤에서부터 접근
-        const retIdx = assetReturns[h.code].length - minLen + i;
-        dailyRet += h.weight * assetReturns[h.code][retIdx];
-      }
-    }
-    portDailyReturns.push(dailyRet);
-    portCumReturns.push(portCumReturns[i] * (1 + dailyRet));
+  for (let i = 0; i < portDailyReturns.length; i++) {
+    portCumReturns.push(portCumReturns[i] * (1 + portDailyReturns[i]));
   }
 
   // 3. 변동성 및 샤프 지수 계산 (연율화)
@@ -260,7 +359,9 @@ export function calculateRealizedRisk(holdings, historicalData, expectedReturn =
     cvar: Math.round(annualCVaR * 1000) / 10,     // %
     mdd: Math.round(Math.abs(mdd) * 1000) / 10,   // %
     calcMode: 'realized',
-    dailyReturns: portDailyReturns
+    dailyReturns: portDailyReturns,
+    dataPoints: portDailyReturns.length,
+    assetCount: usedAssetCount
   };
 }
 
@@ -282,20 +383,24 @@ export function generateRiskReport(holdings, expectedReturn = 0.08, period = '1Y
 
   if (historicalData && historicalData.length > 0) {
     const realized = calculateRealizedRisk(holdings, historicalData, expectedReturn);
-    return {
-      period,
-      metrics: {
-        vol: realized.vol,
-        sharpe: realized.sharpe,
-        sortino: realized.sortino,
-        cvar: realized.cvar,
-        mdd: realized.mdd
-      },
-      riskContribution,
-      calcMode: realized.calcMode,
-      warnings: [],
-      dailyReturns: realized.dailyReturns
-    };
+    if (realized.calcMode === 'realized') {
+      return {
+        period,
+        metrics: {
+          vol: realized.vol,
+          sharpe: realized.sharpe,
+          sortino: realized.sortino,
+          cvar: realized.cvar,
+          mdd: realized.mdd
+        },
+        riskContribution,
+        calcMode: realized.calcMode,
+        warnings: [],
+        dailyReturns: realized.dailyReturns,
+        dataPoints: realized.dataPoints,
+        assetCount: realized.assetCount
+      };
+    }
   }
   const riskMetrics = estimateRiskMetrics(holdings, RISK_DATA, expectedReturn);
   const sortinoResult = estimateSortino(expectedReturn, riskMetrics.vol);
@@ -312,6 +417,8 @@ export function generateRiskReport(holdings, expectedReturn = 0.08, period = '1Y
     },
     riskContribution, // 위에서 선언된 값 사용
     calcMode: 'estimated', // 2단계에서 'realized'로 교체
+    dataPoints: 0,
+    assetCount: 0,
     // 추정 기반임을 명시하는 경고
     warnings: [
       '데이터 연동 지연으로 현재 자산군별 평균 기반 추정치를 제공합니다.',

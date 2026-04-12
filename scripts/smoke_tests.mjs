@@ -6,7 +6,8 @@ import {
   calculateCompositeSplit,
   generateActionTickets,
 } from "../src/services/rebalanceEngine.js";
-import { generateRiskReport } from "../src/services/riskEngine.js";
+import { calculateAverageCorrelationFromHistory, generateRiskReport } from "../src/services/riskEngine.js";
+import { getHistoryTargetCount, normalizePriceRows } from "../api/kis-history.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
 
@@ -195,6 +196,48 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(report.calcMode, "realized");
   assert.ok(report.metrics.vol > 0, "realized risk should use amount weights when targets are zero");
   assert.ok(report.metrics.mdd > 0, "realized risk should produce drawdown from price history");
+}
+
+{
+  assert.equal(getHistoryTargetCount("1Y"), 253);
+  assert.equal(getHistoryTargetCount("3Y"), 757);
+  assert.equal(getHistoryTargetCount("all"), 1261);
+  assert.equal(getHistoryTargetCount("1Y", 300), 300);
+  assert.equal(getHistoryTargetCount("1Y", 5000), 1261);
+
+  const rows = normalizePriceRows(
+    [
+      { stck_bsop_date: "20260412", stck_clpr: "101" },
+      { stck_bsop_date: "20260410", stck_clpr: "100" },
+      { stck_bsop_date: "20260411", stck_clpr: null },
+    ],
+    false
+  );
+  assert.deepEqual(rows.map((item) => item.date), ["20260410", "20260412"]);
+  assert.deepEqual(rows.map((item) => item.price), [100, 101]);
+}
+
+{
+  const baseDate = new Date("2025-04-01T00:00:00Z");
+  const dates = Array.from({ length: 253 }, (_, index) => {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + index);
+    return d.toISOString().slice(0, 10).replace(/-/g, "");
+  });
+  const holdings = [
+    { code: "AAA", etf: "A", cls: "미국주식", amt: 6000000, target: 0 },
+    { code: "BBB", etf: "B", cls: "국내채권", amt: 4000000, target: 0 },
+  ];
+  const historicalData = [
+    { ticker: "AAA", dates, prices: dates.map((_, index) => 100 + index + (index % 7 === 0 ? 2 : 0)) },
+    { ticker: "BBB", dates, prices: dates.map((_, index) => 100 + index * 0.25 + (index % 11 === 0 ? 1 : 0)) },
+  ];
+  const report = generateRiskReport(holdings, 0.085, "1Y", historicalData);
+  const corr = calculateAverageCorrelationFromHistory(holdings, historicalData);
+  assert.equal(report.calcMode, "realized");
+  assert.equal(report.dataPoints, 252);
+  assert.equal(report.assetCount, 2);
+  assert.equal(typeof corr, "number");
 }
 
 console.log("smoke tests passed");

@@ -7,6 +7,7 @@ import { usePortfolio } from "./context/PortfolioContext.jsx";
 import { Badge, Btn } from "./components/common/index.jsx";
 import ConfirmModal from "./components/common/ConfirmModal.jsx";
 import KPIStrip from "./components/common/KPIStrip.jsx";
+import { usePortfolioRiskReport } from "./hooks/usePortfolioRiskReport.js";
 
 const DailyCheckPanel = React.lazy(() => import("./components/panels/DailyCheckPanel.jsx"));
 const RiskPanel = React.lazy(() => import("./components/panels/RiskPanel.jsx"));
@@ -15,8 +16,6 @@ const ValidationPanel = React.lazy(() => import("./components/panels/ValidationP
 const MonthlyReport = React.lazy(() => import("./components/panels/MonthlyReport.jsx"));
 const SettingsPanel = React.lazy(() => import("./components/panels/SettingsPanel.jsx"));
 
-import { estimateRiskMetrics, estimateSortino, estimateCVaR } from "./services/riskEngine.js";
-import { RISK_DATA } from "./constants/index.js";
 import { getStrat } from "./utils/helpers.js";
 
 const TABS = [
@@ -74,16 +73,26 @@ export default function PensionPilot() {
 
   const currentStrategy = React.useMemo(() => getStrat(portfolio.strategy), [portfolio.strategy]);
   const annualExpRet = currentStrategy?.annualRet?.base || 0.08;
-
-  const riskMetrics = React.useMemo(
-    () => estimateRiskMetrics(portfolio.holdings, RISK_DATA, annualExpRet),
-    [portfolio.holdings, annualExpRet]
+  const oneYearRisk = usePortfolioRiskReport(portfolio, "1Y");
+  const kpiRiskReport = oneYearRisk.report;
+  const kpiMdd = kpiRiskReport.calcMode === "realized" && kpiRiskReport.metrics.mdd > 0
+    ? -kpiRiskReport.metrics.mdd
+    : (portfolio.mdd || 0);
+  const calmar = React.useMemo(
+    () => (kpiMdd !== 0 ? (annualExpRet * 100) / Math.abs(kpiMdd) : 0),
+    [annualExpRet, kpiMdd]
   );
-  const sortinoResult = React.useMemo(() => estimateSortino(annualExpRet, riskMetrics.vol), [annualExpRet, riskMetrics.vol]);
-  const cvarResult = React.useMemo(() => estimateCVaR(riskMetrics.vol), [riskMetrics.vol]);
-
-  const mddVal = portfolio.mdd || 0;
-  const calmar = React.useMemo(() => (mddVal !== 0 ? (annualExpRet * 100) / Math.abs(mddVal) : 0), [annualExpRet, mddVal]);
+  const hasFullRiskCoverage =
+    kpiRiskReport.calcMode === "realized" &&
+    oneYearRisk.validHistoryCount === oneYearRisk.historyEligibleHoldings.length &&
+    (kpiRiskReport.dataPoints || 0) >= 252;
+  const riskDataGrade = vixError
+    ? "C"
+    : oneYearRisk.loadingHistory
+      ? "B"
+      : kpiRiskReport.calcMode === "realized"
+        ? (hasFullRiskCoverage ? "A" : "B")
+        : "C";
 
   const handleSelectStrategy = (id) => {
     setModal({
@@ -129,20 +138,23 @@ export default function PensionPilot() {
 
       <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 1rem" }}>
         <KPIStrip
-          total={portfolio.total}
+          total={oneYearRisk.total}
           totalDiff={null}
           vix={vix}
           vixMeta={vixUpdatedAt ? { freshness: (() => { const age = (Date.now() - new Date(vixUpdatedAt).getTime()) / 60000; return age <= 5 ? "realtime" : age <= 60 ? "delayed" : "cached"; })() } : null}
-          avgCorrelation={avgCorrelation}
-          vol={riskMetrics.vol}
-          sharpe={riskMetrics.sharpe}
-          sortino={sortinoResult.sortino}
-          cvar={cvarResult.cvar}
-          mdd={mddVal}
+          avgCorrelation={oneYearRisk.avgCorrelation ?? avgCorrelation}
+          vol={kpiRiskReport.metrics.vol}
+          sharpe={kpiRiskReport.metrics.sharpe}
+          sortino={kpiRiskReport.metrics.sortino}
+          cvar={kpiRiskReport.metrics.cvar}
+          mdd={kpiMdd}
           calmar={calmar}
           fearGreedScore={fearGreed?.score ?? null}
           yieldSpreadVal={yieldSpread?.spread ?? null}
-          dataGrade={vixError ? "C" : vixSource === "KIS" ? "A" : "B"}
+          dataGrade={riskDataGrade}
+          riskCalcMode={kpiRiskReport.calcMode}
+          riskLoading={oneYearRisk.loadingHistory}
+          riskDataPoints={kpiRiskReport.dataPoints || 0}
         />
       </div>
 

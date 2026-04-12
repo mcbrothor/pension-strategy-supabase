@@ -75,6 +75,19 @@ const MOCK_CONFIG = {
   principal_updated_at: "2026-04-13T00:00:00.000Z",
 };
 
+function buildHistory(ticker, count = 253) {
+  const baseDate = new Date("2025-04-01T00:00:00Z");
+  const offset = String(ticker).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) % 17;
+  const dates = Array.from({ length: count }, (_, index) => {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + index);
+    return d.toISOString().slice(0, 10).replace(/-/g, "");
+  });
+  const prices = dates.map((_, index) => 100 + offset + index * (0.15 + offset / 1000) + (index % 19 === 0 ? offset / 5 : 0));
+
+  return { ticker, dates, prices };
+}
+
 function readSupabaseUrl() {
   const raw = fs.readFileSync(path.resolve(".env.local"), "utf8");
   const line = raw.split(/\r?\n/).find((item) => item.startsWith("VITE_SUPABASE_URL="));
@@ -171,6 +184,25 @@ async function mockPortfolioApi(page) {
       }),
     });
   });
+
+  await page.route("**/api/kis-history**", async (route) => {
+    const url = new URL(route.request().url());
+    const ticker = url.searchParams.get("ticker");
+    const count = Number(url.searchParams.get("count"));
+    if (count !== 253) throw new Error(`1Y risk history should request 253 daily closes, got ${count}`);
+    const history = buildHistory(ticker, count);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...history,
+        source: "KIS",
+        requestedCount: count,
+        dataPoints: history.prices.length,
+        pageCount: 4,
+      }),
+    });
+  });
 }
 
 test.describe("Rebalance UI asset-class display", () => {
@@ -206,5 +238,13 @@ test.describe("Rebalance UI asset-class display", () => {
     await expect(list).not.toContainText("ACE 미국빅테크TOP7 Plus");
     await expect(list).not.toContainText("TIGER 코리아TOP10");
     await expect(list).not.toContainText("예수금(현금)");
+  });
+
+  test("top KPI risk metrics use one-year realized portfolio history", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByTestId("kpi-cvar")).toContainText("실현 252일");
+    await expect(page.getByTestId("kpi-mdd")).toContainText("실현 252일");
+    await expect(page.getByTestId("kpi-data-grade")).toContainText("A");
   });
 });
