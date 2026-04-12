@@ -3,6 +3,7 @@ import { Badge, Btn, Card, ST } from "../common/index.jsx";
 import { fmt } from "../../utils/formatters.js";
 import { ASSET_CLASSES, ASSET_COLORS } from "../../constants/index.js";
 import { buildHoldingsCsvTemplate, parseHoldingsCsvText } from "../../utils/holdingsCsv.js";
+import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../../utils/portfolioDisplay.js";
 
 const inputStyle = {
   width: "100%",
@@ -458,20 +459,31 @@ export default function EntryPanel({
     onRowsChange?.(nextRows);
   };
 
-  const totalAmt = rows.reduce((sum, row) => sum + (Number(row.amt) || 0), 0);
+  const evaluationAmount = Number(portfolio.evaluationAmount) || 0;
+  const displayRows = useMemo(
+    () =>
+      buildDisplayHoldings(rows, {
+        evaluationAmount,
+        evaluationUpdatedAt: portfolio.evaluationUpdatedAt,
+        cashAssetClass: CASH_ASSET_CLASS,
+      }),
+    [evaluationAmount, portfolio.evaluationUpdatedAt, rows]
+  );
+  const totalAmt = sumAmounts(displayRows);
   const principalTotal = Number(portfolio.principalTotal) || 0;
-  const totalPnl = principalTotal > 0 ? totalAmt - principalTotal : null;
-  const totalPnlPct = totalPnl != null ? (totalPnl / principalTotal) * 100 : null;
+  const principalReturn = computePrincipalReturn(principalTotal, evaluationAmount);
+  const totalPnl = principalReturn?.amount ?? null;
+  const totalPnlPct = principalReturn?.pct ?? null;
   const canPersistToSupabase = syncStatus === "supabase";
   const requiresLogin = syncStatus === "auth_required";
 
   const sortedAlloc = useMemo(() => {
     const grouped = {};
-    rows.forEach((row) => {
+    displayRows.forEach((row) => {
       grouped[row.cls] = (grouped[row.cls] || 0) + (Number(row.amt) || 0);
     });
     return Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-  }, [rows]);
+  }, [displayRows]);
 
   const isNewCash = newItem.cls === CASH_ASSET_CLASS;
 
@@ -670,12 +682,12 @@ export default function EntryPanel({
   };
 
   const handleExportCsv = () => {
-    if (rows.length === 0) return alert("추출할 데이터가 없습니다.");
+    if (displayRows.length === 0) return alert("추출할 데이터가 없습니다.");
     
     const header = ['자산군', '종목명', '티커', '수량', '현재가', '평가금액', '매수원금', '업데이트일시'];
     const csvContent = [
       "\uFEFF" + header.map(escapeCsvCell).join(','),
-      ...rows.map(r => [
+      ...displayRows.map(r => [
         escapeCsvCell(getAssetClassLabel(r.cls)),
         escapeCsvCell(r.etf),
         escapeCsvCell(r.code),
@@ -706,7 +718,7 @@ export default function EntryPanel({
       if (!d) return max;
       return !max || d > max ? d : max;
     }, null);
-  }, [rows]);
+  }, [displayRows]);
 
   return (
     <div>
@@ -861,7 +873,7 @@ export default function EntryPanel({
                     마지막 저장본 복원
                   </Btn>
                 )}
-                <Btn sm onClick={handleExportCsv} style={{ background: "var(--accent-main)", color: "#fff" }}>
+                <Btn sm primary onClick={handleExportCsv} data-testid="csv-export-button" aria-label="CSV 추출" title="CSV 추출">
                   CSV 추출
                 </Btn>
                 <Btn sm danger onClick={clearAll} disabled={!canPersistToSupabase}>
@@ -890,7 +902,7 @@ export default function EntryPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => {
+                  {displayRows.map((row, index) => {
                     const isUpdated = updatedTickers.has(row.code || row.etf);
                     const rowCostAmt = Number(row.costAmt) || 0;
                     const rowPnl = rowCostAmt > 0 ? (Number(row.amt) || 0) - rowCostAmt : null;
@@ -903,7 +915,7 @@ export default function EntryPanel({
                           : "var(--alert-danger-color)";
 
                     return (
-                      <tr key={`${row.code || row.etf}-${index}`} data-testid="holdings-row" style={{ background: isUpdated ? "rgba(5, 150, 105, 0.08)" : undefined }}>
+                      <tr key={`${row.code || row.etf}-${row.sourceIndex ?? index}`} data-testid="holdings-row" style={{ background: isUpdated ? "rgba(5, 150, 105, 0.08)" : undefined }}>
                         <td style={{ padding: "16px 0" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600 }}>
                             {row.etf || "이름 없는 자산"}
@@ -941,10 +953,10 @@ export default function EntryPanel({
                         </td>
                         <td style={{ textAlign: "center", padding: "16px 0" }}>
                           <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
-                             <Btn sm onClick={() => setEditTarget({ item: row, idx: index })} disabled={!canPersistToSupabase}>
+                             <Btn sm onClick={() => setEditTarget({ item: row, idx: row.sourceIndex })} disabled={!canPersistToSupabase || row.isComputedCash}>
                                수정
                              </Btn>
-                             <Btn sm danger onClick={() => handleRemove(index)} disabled={!canPersistToSupabase}>
+                             <Btn sm danger onClick={() => handleRemove(row.sourceIndex)} disabled={!canPersistToSupabase || row.isComputedCash}>
                                삭제
                              </Btn>
                           </div>
@@ -956,14 +968,14 @@ export default function EntryPanel({
               </table>
             </div>
 
-            {rows.length === 0 && (
+            {displayRows.length === 0 && (
               <div style={{ textAlign: "center", padding: "3rem 0", color: "var(--text-dim)", border: "1px dashed var(--border-glass)", borderRadius: "8px", marginTop: "1rem" }}>
                 등록된 자산이 없습니다. 직접 입력이나 CSV 업로드를 이용해 포트폴리오를 구성해보세요.
               </div>
             )}
 
             <div style={{ marginTop: "1.5rem", padding: "1rem 1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>총 {rows.length}개 자산</div>
+              <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>총 {displayRows.length}개 자산</div>
               <div style={{ fontSize: "15px", fontWeight: 600 }}>
                 자산 합계 <span style={{ fontSize: "22px", fontWeight: 800, color: "var(--accent-main)" }}>{fmt(totalAmt)}</span>
               </div>

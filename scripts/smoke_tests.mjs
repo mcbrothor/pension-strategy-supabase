@@ -7,6 +7,7 @@ import {
   generateActionTickets,
 } from "../src/services/rebalanceEngine.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
+import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
 
 const now = new Date("2026-04-08T00:00:00+09:00");
 
@@ -94,6 +95,45 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(parsed[0].code, "360750");
   assert.equal(parsed[0].qty, 15);
   assert.equal(parsed[0].amt, 180000);
+}
+
+{
+  const holdings = [
+    { etf: "A", code: "A", cls: "미국주식", amt: 26500000 },
+    { etf: "B", code: "B", cls: "국내주식", amt: 12000000 },
+    { etf: "C", code: "C", cls: "금", amt: 10000000 },
+  ];
+  const displayRows = buildDisplayHoldings(holdings, {
+    evaluationAmount: 65000000,
+    cashAssetClass: "현금MMF",
+  });
+  const cash = displayRows.find((row) => row.cls === "현금MMF");
+  assert.equal(cash.etf, "예수금(현금)");
+  assert.equal(cash.amt, 16500000);
+  assert.equal(sumAmounts(displayRows), 65000000);
+}
+
+{
+  const displayRows = buildDisplayHoldings(
+    [
+      { etf: "A", code: "A", cls: "미국주식", amt: 50000000 },
+      { etf: "CASH", code: "CASH", cls: "현금MMF", amt: 1000000 },
+    ],
+    {
+      evaluationAmount: 65000000,
+      cashAssetClass: "현금MMF",
+    }
+  );
+  const cash = displayRows.find((row) => row.cls === "현금MMF");
+  assert.equal(cash.amt, 15000000);
+  assert.equal(sumAmounts(displayRows), 65000000);
+}
+
+{
+  const result = computePrincipalReturn(55000000, 65000000);
+  assert.equal(result.amount, 10000000);
+  assert.equal(Math.round(result.pct * 10) / 10, 18.2);
+  assert.equal(computePrincipalReturn(55000000, 0), null);
 }
 
 console.log("smoke tests passed");

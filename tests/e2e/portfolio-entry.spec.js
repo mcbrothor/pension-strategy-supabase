@@ -31,6 +31,7 @@ test.describe("Portfolio Entry Auth Guard", () => {
     await expect(page.getByTestId("manual-add-button")).toBeDisabled();
     await expect(page.getByTestId("portfolio-evaluation-input")).toBeDisabled();
     await expect(page.getByTestId("portfolio-principal-input")).toBeDisabled();
+    await expect(page.getByTestId("csv-export-button")).toContainText("CSV 추출");
   });
 
   test("starts from an empty holdings state without a Supabase session", async ({ page }) => {
