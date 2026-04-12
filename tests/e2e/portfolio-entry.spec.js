@@ -29,6 +29,7 @@ test.describe("Portfolio Entry Auth Guard", () => {
     await expect(page.getByTestId("manual-cost-input")).toBeDisabled();
     await expect(page.getByTestId("manual-code-input")).toBeDisabled();
     await expect(page.getByTestId("manual-add-button")).toBeDisabled();
+    await expect(page.getByTestId("portfolio-evaluation-input")).toBeDisabled();
     await expect(page.getByTestId("portfolio-principal-input")).toBeDisabled();
   });
 

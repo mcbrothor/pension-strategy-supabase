@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Btn, Card, ST } from "../common/index.jsx";
 import { fmt } from "../../utils/formatters.js";
 import { ASSET_CLASSES, ASSET_COLORS } from "../../constants/index.js";
@@ -171,6 +171,17 @@ function downloadCsvTemplate() {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function getUpdatedDateKey(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
 }
 
 function ImportResultModal({ isOpen, results, currentRows, onClose, onConfirm }) {
@@ -412,6 +423,7 @@ export default function EntryPanel({
   onSave,
   onRowsChange,
   onPrincipalTotalChange,
+  onEvaluationAmountChange,
   onRestorePrevious,
   restoreInfo,
   syncStatus,
@@ -427,6 +439,7 @@ export default function EntryPanel({
   const [importLoading, setImportLoading] = useState(false);
   const [updatedTickers, setUpdatedTickers] = useState(new Set());
   const [principalInput, setPrincipalInput] = useState(String(Number(portfolio.principalTotal) || ""));
+  const [evaluationInput, setEvaluationInput] = useState(String(Number(portfolio.evaluationAmount) || ""));
 
   useEffect(() => {
     setRows(portfolio.holdings || []);
@@ -435,6 +448,10 @@ export default function EntryPanel({
   useEffect(() => {
     setPrincipalInput(String(Number(portfolio.principalTotal) || ""));
   }, [portfolio.principalTotal]);
+
+  useEffect(() => {
+    setEvaluationInput(String(Number(portfolio.evaluationAmount) || ""));
+  }, [portfolio.evaluationAmount]);
 
   const syncRows = (nextRows) => {
     setRows(nextRows);
@@ -652,6 +669,45 @@ export default function EntryPanel({
     }
   };
 
+  const handleExportCsv = () => {
+    if (rows.length === 0) return alert("추출할 데이터가 없습니다.");
+    
+    const header = ['자산군', '종목명', '티커', '수량', '현재가', '평가금액', '매수원금', '업데이트일시'];
+    const csvContent = [
+      "\uFEFF" + header.map(escapeCsvCell).join(','),
+      ...rows.map(r => [
+        escapeCsvCell(getAssetClassLabel(r.cls)),
+        escapeCsvCell(r.etf),
+        escapeCsvCell(r.code),
+        r.qty,
+        r.price,
+        r.amt,
+        r.costAmt,
+        escapeCsvCell(formatUpdatedAt(r.updatedAt) || '')
+      ].join(','))
+    ].join('\n');
+
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `pension_holdings_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const latestDate = useMemo(() => {
+    if (rows.length === 0) return null;
+    return rows.reduce((max, r) => {
+      const d = getUpdatedDateKey(r.updatedAt);
+      if (!d) return max;
+      return !max || d > max ? d : max;
+    }, null);
+  }, [rows]);
+
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.5rem", alignItems: "start" }}>
@@ -805,6 +861,9 @@ export default function EntryPanel({
                     마지막 저장본 복원
                   </Btn>
                 )}
+                <Btn sm onClick={handleExportCsv} style={{ background: "var(--accent-main)", color: "#fff" }}>
+                  CSV 추출
+                </Btn>
                 <Btn sm danger onClick={clearAll} disabled={!canPersistToSupabase}>
                   전체 삭제
                 </Btn>
@@ -852,7 +911,12 @@ export default function EntryPanel({
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--text-dim)", fontFamily: "monospace", marginTop: "4px" }}>{row.code || "CASH"}</div>
                           {formatUpdatedAt(row.updatedAt) && (
-                            <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: "4px" }}>
+                            <div style={{ 
+                              fontSize: "10px", 
+                              color: getUpdatedDateKey(row.updatedAt) === latestDate ? "var(--alert-danger-color)" : "var(--text-dim)", 
+                              marginTop: "4px",
+                              fontWeight: getUpdatedDateKey(row.updatedAt) === latestDate ? 600 : 400
+                            }}>
                               마지막 업데이트 {formatUpdatedAt(row.updatedAt)}
                             </div>
                           )}
@@ -912,7 +976,42 @@ export default function EntryPanel({
             <ST>자산군 비중 (실시간)</ST>
             <div style={{ display: "grid", gap: "10px", marginBottom: "14px" }}>
               <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <label style={labelStyle}>연금 총 원금</label>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "8px" }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>계좌 평가 금액 (MTS 실시간)</label>
+                  {portfolio.evaluationUpdatedAt && (
+                    <div style={{ fontSize: "10px", color: "var(--text-dim)" }}>
+                      업데이트: {formatUpdatedAt(portfolio.evaluationUpdatedAt)}
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  style={{ ...inputStyle, border: "1.5px solid var(--accent-main)", background: "rgba(37, 99, 235, 0.05)" }}
+                  value={evaluationInput}
+                  onChange={(e) => setEvaluationInput(e.target.value)}
+                  onBlur={async () => {
+                    if (!canPersistToSupabase) return;
+                    try {
+                      await onEvaluationAmountChange?.(evaluationInput);
+                    } catch (error) {
+                      alert(error.message);
+                    }
+                  }}
+                  data-testid="portfolio-evaluation-input"
+                  placeholder="MTS상의 총 평가 금액을 입력"
+                  disabled={!canPersistToSupabase}
+                />
+              </div>
+
+              <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "8px" }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>연금 총 원금</label>
+                  {portfolio.principalUpdatedAt && (
+                    <div style={{ fontSize: "10px", color: "var(--text-dim)" }}>
+                      업데이트: {formatUpdatedAt(portfolio.principalUpdatedAt)}
+                    </div>
+                  )}
+                </div>
                 <input
                   type="number"
                   style={inputStyle}
@@ -931,6 +1030,7 @@ export default function EntryPanel({
                   disabled={!canPersistToSupabase}
                 />
               </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
                 <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
                   <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px" }}>총 원금</div>

@@ -5,14 +5,9 @@ import { DEMO_PORTFOLIO, STRATEGIES } from '../constants/index.js';
 import { computeTargets } from '../services/momentumEngine.js';
 
 const PortfolioContext = createContext();
-const PRINCIPAL_STORAGE_PREFIX = 'portfolio_principal_total';
 const PORTFOLIO_STORAGE_PREFIX = 'portfolio_state';
 const PORTFOLIO_BACKUP_STORAGE_PREFIX = 'portfolio_state_backup';
 const PORTFOLIO_BACKUP_LIMIT = 5;
-
-function getPrincipalStorageKey(userId) {
-  return `${PRINCIPAL_STORAGE_PREFIX}:${userId || 'demo'}`;
-}
 
 function getPortfolioStorageKey(userId) {
   return `${PORTFOLIO_STORAGE_PREFIX}:${userId || 'demo'}`;
@@ -20,19 +15,6 @@ function getPortfolioStorageKey(userId) {
 
 function getPortfolioBackupStorageKey(userId) {
   return `${PORTFOLIO_BACKUP_STORAGE_PREFIX}:${userId || 'demo'}`;
-}
-
-function readStoredPrincipalTotal(userId) {
-  if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(getPrincipalStorageKey(userId));
-  if (raw == null || raw === '') return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function writeStoredPrincipalTotal(userId, value) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(getPrincipalStorageKey(userId), String(Number(value) || 0));
 }
 
 function normalizeHolding(item = {}) {
@@ -132,6 +114,9 @@ function readPortfolioLike(parsed) {
     ...parsed,
     total,
     principalTotal,
+    evaluationAmount: Number(parsed?.evaluationAmount) || 0,
+    evaluationUpdatedAt: parsed?.evaluationUpdatedAt || null,
+    principalUpdatedAt: parsed?.principalUpdatedAt || null,
     holdings,
     history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
   };
@@ -318,12 +303,8 @@ export function PortfolioProvider({ children }) {
 
       const total = mappedHoldings.reduce((sum, h) => sum + h.amt, 0);
       const holdingsPrincipalTotal = mappedHoldings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
-      const storedPrincipalTotal = readStoredPrincipalTotal(user.id);
-      const principalTotal = storedPrincipalTotal != null ? storedPrincipalTotal : holdingsPrincipalTotal;
-
-      if (storedPrincipalTotal == null && holdingsPrincipalTotal > 0) {
-        writeStoredPrincipalTotal(user.id, holdingsPrincipalTotal);
-      }
+      const principalTotal =
+        configs?.principal_total != null ? Number(configs.principal_total) : holdingsPrincipalTotal;
 
       const nextPortfolio = {
         ...DEMO_PORTFOLIO,
@@ -336,7 +317,10 @@ export function PortfolioProvider({ children }) {
           total: s.total_amt,
           strategy: s.strategy_id,
           weights: s.weights
-        }))
+        })),
+        evaluationAmount: Number(configs?.evaluation_amount) || 0,
+        evaluationUpdatedAt: configs?.evaluation_updated_at || null,
+        principalUpdatedAt: configs?.principal_updated_at || null,
       };
 
       setPortfolio(nextPortfolio);
@@ -384,8 +368,9 @@ export function PortfolioProvider({ children }) {
         if (error) throw error;
       }
       
+      const now = new Date().toISOString();
       const normalizedItems = items
-        .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0))
+        .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0 || it.cls === '현금MMF'))
         .map(it => {
           const payload = {
             user_id: user.id,
@@ -396,7 +381,7 @@ export function PortfolioProvider({ children }) {
             current_price: Number(it.price) || 0,
             cost_amt: Number(it.costAmt) || 0,
             amount: Number(it.amt) || 0,
-            updated_at: new Date().toISOString()
+            updated_at: it.updatedAt || now
           };
           if (it.id) payload.id = it.id;
           return payload;
@@ -472,17 +457,103 @@ export function PortfolioProvider({ children }) {
       throw new Error('Supabase 로그인 세션이 없어 원금을 저장할 수 없습니다. 계정 탭에서 다시 로그인해주세요.');
     }
 
-    writeStoredPrincipalTotal(user.id, normalized);
-    setPortfolio(prev => {
-      const nextPortfolio = {
+    const updatedAt = new Date().toISOString();
+    try {
+      setSyncStatus('syncing');
+      const { error } = await supabase
+        .from('config')
+        .upsert({ 
+          user_id: user.id, 
+          principal_total: normalized, 
+          principal_updated_at: updatedAt 
+        });
+      if (error) throw error;
+
+      setPortfolio(prev => {
+        const nextPortfolio = {
+          ...prev,
+          principalTotal: normalized,
+          principalUpdatedAt: updatedAt,
+        };
+        writeStoredPortfolio(user.id, nextPortfolio);
+        refreshRestoreInfo(user.id);
+        return nextPortfolio;
+      });
+      setSyncStatus('supabase');
+    } catch (e) {
+      console.error("Save Principal Error:", e.message);
+      setSyncStatus('error');
+      throw e;
+    }
+  };
+
+  const saveEvaluationAmount = async (value) => {
+    const evalAmt = Math.max(0, Number(value) || 0);
+    if (!user) {
+      setSyncStatus('auth_required');
+      throw new Error('Supabase 로그인 세션이 없어 평가 금액을 저장할 수 없습니다.');
+    }
+
+    const updatedAt = new Date().toISOString();
+    try {
+      setSyncStatus('syncing');
+      
+      // 1. 평가 금액 및 시간 DB 저장
+      const { error: configErr } = await supabase
+        .from('config')
+        .upsert({ 
+          user_id: user.id, 
+          evaluation_amount: evalAmt, 
+          evaluation_updated_at: updatedAt 
+        });
+      if (configErr) throw configErr;
+
+      // 2. 예수금 자동 계산
+      // 현금MMF를 제외한 나머지 자산의 합계 계산
+      const CASH_CLS = "현금MMF";
+      const otherAmt = portfolio.holdings
+        .filter(h => h.cls !== CASH_CLS)
+        .reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
+      
+      const neededCash = Math.max(0, evalAmt - otherAmt);
+
+      const nextHoldings = [...portfolio.holdings];
+      const cashIdx = nextHoldings.findIndex(h => h.cls === CASH_CLS);
+
+      if (cashIdx >= 0) {
+        nextHoldings[cashIdx] = {
+          ...nextHoldings[cashIdx],
+          amt: neededCash,
+          updatedAt: updatedAt
+        };
+      } else {
+        nextHoldings.push({
+          etf: "예수금(현금)",
+          code: "CASH",
+          cls: CASH_CLS,
+          qty: 0,
+          price: 0,
+          amt: neededCash,
+          costAmt: neededCash,
+          updatedAt: updatedAt
+        });
+      }
+
+      // 3. 자산 내역 저장 (saveHoldings 재사용)
+      // 주의: saveHoldings 내부에서 loadPortfolio를 호출하므로 상태가 최종 업데이트됨
+      await saveHoldings(nextHoldings);
+      
+      setPortfolio(prev => ({
         ...prev,
-        principalTotal: normalized,
-      };
-      writeStoredPortfolio(user.id, nextPortfolio);
-      refreshRestoreInfo(user.id);
-      return nextPortfolio;
-    });
-    setSyncStatus('supabase');
+        evaluationAmount: evalAmt,
+        evaluationUpdatedAt: updatedAt
+      }));
+      
+    } catch (e) {
+      console.error("Save Evaluation Error:", e.message);
+      setSyncStatus('error');
+      throw e;
+    }
   };
 
   const restorePreviousPortfolio = React.useCallback(() => {
@@ -572,6 +643,7 @@ export function PortfolioProvider({ children }) {
       loadPortfolio, 
       saveHoldings, 
       savePrincipalTotal,
+      saveEvaluationAmount,
       restorePreviousPortfolio,
       restoreInfo,
       syncStatus,

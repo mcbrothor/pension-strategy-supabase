@@ -1,4 +1,4 @@
-﻿import React, { Suspense, useState } from "react";
+import React, { Suspense, useState } from "react";
 
 import { useAuth } from "./context/AuthContext.jsx";
 import { useMarket } from "./context/MarketContext.jsx";
@@ -64,6 +64,7 @@ export default function PensionPilot() {
     updateStrategy,
     saveHoldings,
     savePrincipalTotal,
+    saveEvaluationAmount,
     restorePreviousPortfolio,
     restoreInfo,
     syncStatus,
@@ -225,6 +226,7 @@ export default function PensionPilot() {
               setPortfolio={setPortfolio}
               saveHoldings={saveHoldings}
               savePrincipalTotal={savePrincipalTotal}
+              saveEvaluationAmount={saveEvaluationAmount}
               restorePreviousPortfolio={restorePreviousPortfolio}
               restoreInfo={restoreInfo}
               syncStatus={syncStatus}
