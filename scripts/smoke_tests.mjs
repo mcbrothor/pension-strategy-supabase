@@ -85,6 +85,34 @@ const now = new Date("2026-04-08T00:00:00+09:00");
 }
 
 {
+  const holdings = [
+    { code: "AAA", etf: "미국주식 ETF 1", cls: "미국주식", amt: 6000000, costAmt: 6000000, target: 30 },
+    { code: "BBB", etf: "미국주식 ETF 2", cls: "미국주식", amt: 4000000, costAmt: 4000000, target: 30 },
+    { code: "CASH", etf: "예수금(현금)", cls: "현금MMF", amt: 0, costAmt: 0, target: 70 },
+  ];
+
+  const total = holdings.reduce((sum, item) => sum + item.amt, 0);
+  const grouped = aggregateByAssetClass(holdings, total);
+
+  assert.equal(grouped.filter((item) => item.cls === "미국주식").length, 1);
+  assert.equal(grouped.find((item) => item.cls === "미국주식").actionAmt, 7000000);
+
+  const tickets = generateActionTickets(grouped, {
+    vix: 18,
+    fearGreed: null,
+    yieldSpread: null,
+    stopLoss: -20,
+    mdd: -5,
+    mddLimit: -15,
+    accountType: "연금저축",
+    irpRiskRatio: calculateIRPRiskRatio(grouped),
+  });
+
+  assert.equal(tickets.filter((item) => item.assetClass === "미국주식").length, 1);
+  assert.equal(tickets.some((item) => String(item.assetClass).includes("ETF")), false);
+}
+
+{
   assert.equal(calculateCompositeSplit(36, 18, -0.2), 7);
   assert.equal(calculateCompositeSplit(16, 80, 1.0), 1);
 }

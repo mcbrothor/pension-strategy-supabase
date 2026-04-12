@@ -163,13 +163,24 @@ export default function DailyCheckPanel({
       {/* ===== 시장 상황 + 자산 배분 현황 ===== */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "1rem" }}>
         <Card style={{ marginBottom: 0 }}>
+          <div data-testid="asset-class-allocation-panel">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".875rem" }}>
-            <ST>포트폴리오 자산 배분</ST>
+            <ST>자산군별 자산 배분</ST>
             <Btn sm onClick={onFetchVix}>{vixLoading ? "갱신 중…" : "VIX 갱신"}</Btn>
           </div>
-          {holdings.map((h, i) => (
-            <AllocBar key={i} label={h.etf} pct={h.cur} target={h.target} color={ASSET_COLORS[h.cls] || "#888"} />
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 10 }}>
+            리밸런싱 판단은 자산군 단위로만 표시합니다. ETF별 교체와 추가 매수 판단은 별도로 결정하세요.
+          </div>
+          {assetClassResults.map((assetClass, i) => (
+            <AllocBar
+              key={i}
+              label={assetClass.cls}
+              pct={assetClass.cur}
+              target={assetClass.target}
+              color={ASSET_COLORS[assetClass.cls] || "#888"}
+            />
           ))}
+          </div>
         </Card>
 
         <Card style={{ marginBottom: 0 }}>

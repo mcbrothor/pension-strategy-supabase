@@ -193,9 +193,12 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
           </div>
           {sells.length > 0 && <Card>
             <div style={{ fontSize: 11, fontWeight: 500, color: "#791f1f", marginBottom: ".75rem" }}>매도 — 비중 초과 자산군</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: "1rem" }}>
+              ETF별 매도 금액은 제시하지 않고, 자산군별 축소 금액만 표시합니다.
+            </div>
             {sells.map((c, i) => {
               const key = `s${i}`; return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < sells.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key]?.5 : 1 }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < sells.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key] ? 0.5 : 1 }}>
                   <input type="checkbox" checked={!!checked[key]} onChange={e => setChecked(p => ({ ...p, [key]: e.target.checked }))} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer" }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 14, fontWeight: 600, textDecoration: checked[key] ? "line-through" : "none" }}>{c.cls}</span><Badge c="#791f1f" bg="#fcebeb">매도</Badge></div>
@@ -209,9 +212,12 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
           {buys.length > 0 && <Card>
             <div style={{ fontSize: 11, fontWeight: 500, color: "#0c447c", marginBottom: ".75rem" }}>매수 — 비중 부족 자산군</div>
             {vix && vix > 25 && <div style={{ background: "#faeeda", borderRadius: 8, padding: ".75rem 1rem", fontSize: 12, color: "#633806", marginBottom: "1rem" }}>VIX {vix?.toFixed(1) || "…"} 불안 구간 — {vix > 35 ? "3~5회" : "2~3회"} 분할 매수 권장</div>}
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: "1rem" }}>
+              ETF별 매수 금액은 제시하지 않고, 자산군별 보강 금액만 표시합니다.
+            </div>
             {buys.map((c, i) => {
               const key = `b${i}`; const sp = vix > 35 ? 5 : vix > 25 ? 3 : 1; return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < buys.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key]?.5 : 1 }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < buys.length - 1 ? "0.5px solid var(--border-glass)" : "none", opacity: checked[key] ? 0.5 : 1 }}>
                   <input type="checkbox" checked={!!checked[key]} onChange={e => setChecked(p => ({ ...p, [key]: e.target.checked }))} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer" }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}><span style={{ fontSize: 14, fontWeight: 600, textDecoration: checked[key] ? "line-through" : "none" }}>{c.cls}</span><Badge c="#0c447c" bg="#e6f1fb">매수</Badge>{sp > 1 && <Badge c="#633806" bg="#faeeda">{sp}회 분할</Badge>}</div>

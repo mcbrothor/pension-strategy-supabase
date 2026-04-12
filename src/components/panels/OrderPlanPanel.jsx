@@ -6,7 +6,7 @@ import { aggregateByAssetClass, calculateIRPRiskRatio, checkRebalanceTiming, gen
 import { supabase } from "../../lib/supabase.js";
 
 /**
- * 주문계획 패널 — 리밸런싱 판단 + 주문 제안서
+ * 주문계획 패널 — 리밸런싱 판단 + 자산군별 조정안
  * 기존 RebalanceJudge의 3단계 워크플로우를 통합합니다.
  */
 export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation, fearGreed, yieldSpread }) {
@@ -21,7 +21,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
   const assetClassResults = aggregateByAssetClass(portfolio.holdings, total);
   const irpRiskRatio = calculateIRPRiskRatio(assetClassResults);
 
-  // ActionTicket 생성 (주문 제안서 핵심)
+  // ActionTicket 생성 (자산군별 조정안 핵심)
   const tickets = generateActionTickets(assetClassResults, {
     vix, fearGreed, yieldSpread, stopLoss: portfolio.stopLoss, mdd: portfolio.mdd, mddLimit: portfolio.mddLimit,
     accountType: portfolio.accountType, irpRiskRatio
@@ -93,7 +93,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
       <Card>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: "1rem" }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>주문 제안서</div>
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>자산군별 조정안</div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
               <Badge c="var(--alert-ok-color)" bg="var(--alert-ok-bg)">{s.name}</Badge>
               <Badge c={timing.isOverdue ? "var(--alert-danger-color)" : "var(--text-dim)"} bg={timing.isOverdue ? "var(--alert-danger-bg)" : "var(--bg-main)"}>{timing.elapsed}일 경과</Badge>
@@ -126,7 +126,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
           <MetaCard label="유지" value={`${holdTickets.length}건`} />
         </div>
         <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--bg-main)", borderRadius: 8, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6 }}>
-          MTS 주문 참고용 금액입니다. 실제 주문 전에는 MTS의 현재가, 주문 가능 현금, 최소 주문 단위를 다시 확인하세요.
+          자산군별 조정 금액입니다. ETF별 매매 종목과 수량은 별도로 결정하세요.
           {actionTickets.length > 0 && (
             <div style={{ marginTop: 4, color: cashGap > 0 ? "var(--alert-warn-color)" : "var(--text-dim)" }}>
               매수 필요액 {fmt(totalBuyAmount)}원 / 매도 참고액 {fmt(totalSellAmount)}원
@@ -145,7 +145,11 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
       {/* 주문 상세 — 체크리스트 */}
       {actionTickets.length > 0 && (
         <Card>
-          <ST>실행 체크리스트 ({doneCount} / {actionTickets.length} 완료)</ST>
+          <div data-testid="asset-class-action-list">
+          <ST>자산군별 조정 체크리스트 ({doneCount} / {actionTickets.length} 완료)</ST>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 10 }}>
+            아래 금액은 자산군 단위의 증감 목표입니다. 같은 자산군 안에서 어떤 ETF를 사고팔지는 별도로 판단할 수 있도록 ETF별 주문 금액은 제시하지 않습니다.
+          </div>
           {actionTickets.map((t, i) => {
             const key = `t${i}`;
             return (
@@ -167,12 +171,13 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
                     )}
                   </div>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: t.actionType === 'sell' ? "#a32d2d" : "#185fa5", flexShrink: 0 }}>
+                <div data-testid="asset-class-action-amount" style={{ fontSize: 15, fontWeight: 600, color: t.actionType === 'sell' ? "#a32d2d" : "#185fa5", flexShrink: 0 }}>
                   {t.actionType === 'sell' ? '-' : '+'}{fmt(t.amount)}원
                 </div>
               </div>
             );
           })}
+          </div>
 
           {doneCount === actionTickets.length && actionTickets.length > 0 && (
             <div style={{ background: "var(--alert-ok-bg)", borderRadius: 8, padding: 12, textAlign: "center", marginTop: 12 }}>
@@ -190,7 +195,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
                   color: "#fff", fontWeight: 600 
                 }}
               >
-                {saveComplete ? "로그 저장 및 알림 발송 완료" : savingConfig ? "저장 중..." : "결정 로그 저장하기 & 메일 알림"}
+                {saveComplete ? "로그 저장 및 알림 발송 완료" : savingConfig ? "저장 중..." : "자산군 조정 로그 저장하기 & 메일 알림"}
               </button>
             </div>
           )}
