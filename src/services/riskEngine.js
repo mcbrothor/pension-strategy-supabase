@@ -19,6 +19,29 @@ const std = (arr) => {
   return Math.sqrt(arr.reduce((a, b) => a + Math.pow(b - m, 2), 0) / (arr.length - 1));
 };
 
+function getHoldingWeight(holding, totalAmount = 0) {
+  const amount = Number(holding?.amt) || 0;
+  if (totalAmount > 0 && amount > 0) return amount / totalAmount;
+
+  const cur = Number(holding?.cur);
+  if (Number.isFinite(cur) && cur > 0) return cur / 100;
+
+  const target = Number(holding?.target);
+  if (Number.isFinite(target) && target > 0) return target / 100;
+
+  return 0;
+}
+
+function prepareWeightedHoldings(holdings = []) {
+  const totalAmount = holdings.reduce((acc, h) => acc + (Number(h?.amt) || 0), 0);
+  return holdings
+    .map(h => ({
+      ...h,
+      weight: getHoldingWeight(h, totalAmount),
+    }))
+    .filter(h => h.weight > 0);
+}
+
 // =============================================================================
 // 기본 리스크 지표 (기존 calculators.js에서 이관)
 // =============================================================================
@@ -37,11 +60,12 @@ const std = (arr) => {
 export function estimateRiskMetrics(holdings, riskData = RISK_DATA, expectedReturn = 0.08, rfRate = 0.03) {
   if (!holdings || holdings.length === 0) return { vol: 0, sharpe: 0, calcMode: 'estimated' };
 
+  const weightedHoldings = prepareWeightedHoldings(holdings);
   let totalVol = 0;
   let totalWeight = 0;
 
-  holdings.forEach(h => {
-    const weight = (Number(h.target) || 0) / 100;
+  weightedHoldings.forEach(h => {
+    const weight = h.weight;
     const sigma = riskData[h.cls] || 0.15;
     totalVol += weight * sigma;
     totalWeight += weight;
@@ -67,12 +91,21 @@ export function estimateRiskMetrics(holdings, riskData = RISK_DATA, expectedRetu
 export function calculateRiskContribution(holdings, riskData = RISK_DATA) {
   if (!holdings || holdings.length === 0) return [];
   
-  const items = holdings.map(h => ({
-    cls: h.cls,
-    etf: h.etf,
-    weight: (Number(h.target) || 0) / 100,
-    sigma: riskData[h.cls] || 0.15
-  }));
+  const grouped = new Map();
+  prepareWeightedHoldings(holdings).forEach(h => {
+    const key = h.cls || '기타';
+    const sigma = riskData[key] || 0.15;
+    const existing = grouped.get(key) || {
+      cls: key,
+      etf: key,
+      weight: 0,
+      sigma,
+    };
+    existing.weight += h.weight;
+    grouped.set(key, existing);
+  });
+
+  const items = Array.from(grouped.values());
   
   const totalRisk = items.reduce((acc, item) => acc + item.weight * item.sigma, 0);
   if (totalRisk === 0) return [];
@@ -148,11 +181,14 @@ export function calculateRealizedRisk(holdings, historicalData, expectedReturn =
     return { vol: 0, sharpe: 0, sortino: 0, cvar: 0, mdd: 0, calcMode: 'realized', dailyReturns: [] };
   }
 
+  const weightedHoldings = prepareWeightedHoldings(holdings);
+
   // 1. 각 자산별 일간 수익률 시계열화 (길이가 가장 짧은 데이터에 맞춤)
   const assetReturns = {};
   let minLen = Infinity;
 
-  for (const h of holdings) {
+  for (const h of weightedHoldings) {
+    if (h.cls === '현금MMF' || h.code === 'CASH') continue;
     const data = historicalData.find(d => d.ticker === h.code);
     if (!data || data.prices.length < 2) continue; // 데이터 부족
     
@@ -175,18 +211,14 @@ export function calculateRealizedRisk(holdings, historicalData, expectedReturn =
 
   for (let i = 0; i < minLen; i++) {
     let dailyRet = 0;
-    let totalW = 0;
-    for (const h of holdings) {
+    for (const h of weightedHoldings) {
+      if (h.cls === '현금MMF' || h.code === 'CASH') continue;
       if (assetReturns[h.code]) {
-        const w = (Number(h.target) || 0) / 100;
         // 시계열 끝(가장 최근 데이터)을 맞추기 위해 뒤에서부터 접근
         const retIdx = assetReturns[h.code].length - minLen + i;
-        dailyRet += w * assetReturns[h.code][retIdx];
-        totalW += w;
+        dailyRet += h.weight * assetReturns[h.code][retIdx];
       }
     }
-    // 정규화 (전체 비중 합이 1이 아닐 대비)
-    dailyRet = totalW > 0 ? dailyRet / totalW : 0;
     portDailyReturns.push(dailyRet);
     portCumReturns.push(portCumReturns[i] * (1 + dailyRet));
   }

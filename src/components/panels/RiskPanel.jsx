@@ -20,21 +20,28 @@ export default function RiskPanel({ portfolio }) {
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const s = getStrat(portfolio.strategy);
-  const total = portfolio.total || 0;
+  const total = portfolio.holdings.reduce((sum, h) => sum + (Number(h.amt) || 0), 0) || portfolio.total || 0;
   const holdings = portfolio.holdings.map(h => {
     const cur = total > 0 ? Math.round((h.amt || 0) / total * 1000) / 10 : 0;
     return { ...h, cur };
   });
+  const historyEligibleHoldings = holdings.filter(h => h.code && h.code !== "CASH" && h.cls !== "현금MMF");
+
+  const isOverseasTicker = (ticker) => {
+    const code = String(ticker || "").trim().toUpperCase();
+    if (!code) return false;
+    return !/^[0-9A-Z]{6}$/.test(code);
+  };
 
   useEffect(() => {
-    if (!holdings || holdings.length === 0) return;
+    if (!historyEligibleHoldings || historyEligibleHoldings.length === 0) return;
     let isMounted = true;
     
     const fetchHistory = async () => {
       setLoadingHistory(true);
       try {
-        const promises = holdings.map(async h => {
-           const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
+        const promises = historyEligibleHoldings.map(async h => {
+           const isOverseas = isOverseasTicker(h.code);
            try {
              const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
              if (!res.ok) return null;
@@ -61,7 +68,7 @@ export default function RiskPanel({ portfolio }) {
     
     fetchHistory();
     return () => { isMounted = false; };
-  }, [portfolio.strategy, holdings.length]);
+  }, [portfolio.strategy, historyEligibleHoldings.map(h => h.code).join("|")]);
 
   const annualExpRet = s?.annualRet?.base || 0.08;
   const report = generateRiskReport(holdings, annualExpRet, period, historicalData);
@@ -103,7 +110,7 @@ export default function RiskPanel({ portfolio }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: "1rem" }}>
         <MetaCard
           label="기대 변동성(σ)"
-          value={fmtP(report.metrics.vol)}
+          value={<span data-testid="risk-vol">{fmtP(report.metrics.vol)}</span>}
           sub={report.metrics.vol < 8 ? "보수적" : report.metrics.vol < 15 ? "중립적" : "공격적"}
           subColor={report.metrics.vol < 15 ? "var(--alert-ok-color)" : "var(--alert-warn-color)"}
         />
@@ -138,12 +145,14 @@ export default function RiskPanel({ portfolio }) {
         <div style={{ fontSize: 11, padding: "8px 10px", marginBottom: 12, borderRadius: 8, background: "var(--bg-main)", color: "var(--text-dim)", lineHeight: 1.6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
             <span>
+              <span data-testid="risk-calc-basis">
               계산 기준: {report.calcMode === "realized" ? `실현 데이터 기반 (${validHistoryCount}개 종목 가격 반영)` : "자산군 평균값 추정 기반"}
               {report.calcMode !== "realized" && " · KIS 과거 시세가 부족하거나 조회 실패 시 추정치로 표시됩니다."}
+              </span>
             </span>
-            {holdings.length > validHistoryCount && (
+            {historyEligibleHoldings.length > validHistoryCount && (
               <span style={{ color: "var(--alert-warn-color)", fontWeight: 500 }}>
-                제외된 자산: {holdings.filter(h => !historicalData?.find(d => d.ticker === h.code)).map(h => h.etf || h.code || "현금").join(", ")}
+                제외된 자산: {historyEligibleHoldings.filter(h => !historicalData?.find(d => d.ticker === h.code)).map(h => h.etf || h.code).join(", ")}
               </span>
             )}
           </div>
@@ -192,7 +201,7 @@ export default function RiskPanel({ portfolio }) {
           각 자산이 포트폴리오 전체 위험에 기여하는 비율입니다. 특정 자산의 기여도가 지나치게 높으면 집중 리스크를 의미합니다.
         </div>
         {report.riskContribution.map((item, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div key={i} data-testid="risk-contribution-row" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <div style={{ fontSize: 12, minWidth: 100, fontWeight: 500 }}>{item.cls}</div>
             <div style={{ flex: 1, height: 8, background: "var(--bg-main)", borderRadius: 4, overflow: "hidden" }}>
               <div style={{

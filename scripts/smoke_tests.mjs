@@ -6,6 +6,7 @@ import {
   calculateCompositeSplit,
   generateActionTickets,
 } from "../src/services/rebalanceEngine.js";
+import { generateRiskReport } from "../src/services/riskEngine.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
 
@@ -134,6 +135,38 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(result.amount, 10000000);
   assert.equal(Math.round(result.pct * 10) / 10, 18.2);
   assert.equal(computePrincipalReturn(55000000, 0), null);
+}
+
+{
+  const holdings = [
+    { code: "292150", etf: "TIGER 코리아TOP10", cls: "국내주식", amt: 2651575, target: 0 },
+    { code: "379800", etf: "KODEX 미국S&P500", cls: "미국주식", amt: 6080425, target: 0 },
+    { code: "411060", etf: "ACE KRX금현물", cls: "금", amt: 4470405, target: 0 },
+    { code: "469830", etf: "SOL 초단기채권액티브", cls: "국내채권", amt: 10737000, target: 0 },
+    { code: "481060", etf: "KODEX 미국30년국채타겟커버드콜", cls: "글로벌채권", amt: 7536100, target: 0 },
+    { code: "CASH", etf: "예수금(현금)", cls: "현금MMF", amt: 3966120, target: 0 },
+  ];
+  const report = generateRiskReport(holdings, 0.085, "1Y", null);
+  assert.ok(report.metrics.vol > 0, "current-weight risk volatility should be positive");
+  assert.ok(report.metrics.sharpe > 0, "current-weight sharpe should be positive");
+  assert.equal(report.riskContribution.some(item => item.cls === "현금MMF"), true);
+  assert.equal(report.riskContribution.filter(item => item.cls === "미국주식").length, 1);
+}
+
+{
+  const holdings = [
+    { code: "AAA", etf: "A", cls: "미국주식", amt: 6000000, target: 0 },
+    { code: "BBB", etf: "B", cls: "국내채권", amt: 3000000, target: 0 },
+    { code: "CASH", etf: "예수금(현금)", cls: "현금MMF", amt: 1000000, target: 0 },
+  ];
+  const historicalData = [
+    { ticker: "AAA", prices: [100, 102, 101, 105, 103, 106] },
+    { ticker: "BBB", prices: [100, 100.1, 100.05, 100.2, 100.15, 100.3] },
+  ];
+  const report = generateRiskReport(holdings, 0.085, "1Y", historicalData);
+  assert.equal(report.calcMode, "realized");
+  assert.ok(report.metrics.vol > 0, "realized risk should use amount weights when targets are zero");
+  assert.ok(report.metrics.mdd > 0, "realized risk should produce drawdown from price history");
 }
 
 console.log("smoke tests passed");
