@@ -10,23 +10,31 @@ export default function CompareWeights({ portfolio }) {
   // 버그 수정: etfs → composition (실제 전략 데이터 필드명)
   const benchMap = Object.fromEntries((bench.composition || []).filter(e => e.w != null && e.w > 0).map(e => [e.cls, e.w]));
 
-  const holdings = portfolio.holdings.map(h => {
-    const cur = total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0;
-    const bm = benchMap[h.cls] || 0;
-    const diff = Math.round((cur - bm) * 10) / 10;
-    const targetAmt = Math.round(total * bm / 100);
-    const actionAmt = Math.round((h.amt - targetAmt) / 10000) * 10000;
-    return { ...h, cur, bm, diff, targetAmt, actionAmt };
+  const classMap = {};
+  portfolio.holdings.forEach(h => {
+    const cls = h.cls || "기타";
+    if (!classMap[cls]) classMap[cls] = { cls, amt: 0 };
+    classMap[cls].amt += Number(h.amt) || 0;
   });
 
-  const allCls = [...new Set([...holdings.map(h => h.cls), ...Object.keys(benchMap)])];
-  const sells = holdings.filter(h => h.actionAmt > 5000).sort((a, b) => b.actionAmt - a.actionAmt);
-  const buys = holdings.filter(h => h.actionAmt < -5000).sort((a, b) => a.actionAmt - b.actionAmt);
+  const allCls = [...new Set([...Object.keys(classMap), ...Object.keys(benchMap)])];
+  const assetClasses = allCls.map(cls => {
+    const amt = classMap[cls]?.amt || 0;
+    const cur = total > 0 ? Math.round(amt / total * 1000) / 10 : 0;
+    const bm = benchMap[cls] || 0;
+    const diff = Math.round((cur - bm) * 10) / 10;
+    const targetAmt = Math.round(total * bm / 100);
+    const actionAmt = Math.round((amt - targetAmt) / 10000) * 10000;
+    return { cls, amt, cur, bm, diff, targetAmt, actionAmt };
+  });
+
+  const sells = assetClasses.filter(h => h.actionAmt > 5000).sort((a, b) => b.actionAmt - a.actionAmt);
+  const buys = assetClasses.filter(h => h.actionAmt < -5000).sort((a, b) => a.actionAmt - b.actionAmt);
 
   return (
     <div>
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyBetween: "space-between", marginBottom: ".875rem", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".875rem", flexWrap: "wrap", gap: 8 }}>
           <ST>벤치마크 전략 선택</ST>
           <select value={benchKey} onChange={e => setBenchKey(e.target.value)}
             style={{ padding: "6px 10px", border: "0.5px solid var(--border-glass)", borderRadius: "var(--radius-md)", fontSize: 12, background: "var(--bg-card)", color: "var(--text-main)", fontFamily: "var(--font-sans)" }}>
@@ -37,7 +45,7 @@ export default function CompareWeights({ portfolio }) {
           <span><span style={{ display: "inline-block", width: 10, height: 4, background: "var(--text-main)", opacity: .3, marginRight: 4, verticalAlign: "middle" }} />벤치마크 목표</span>
         </div>
         {allCls.map((cls, i) => {
-          const h = holdings.find(x => x.cls === cls);
+          const h = assetClasses.find(x => x.cls === cls);
           const cur = h ? h.cur : 0;
           const bm = benchMap[cls] || 0;
           const diff = Math.round((cur - bm) * 10) / 10;
@@ -58,10 +66,11 @@ export default function CompareWeights({ portfolio }) {
 
       {(sells.length > 0 || buys.length > 0) && (
         <Card>
+          <div data-testid="benchmark-rebalance-adjustments">
           <ST>리밸런싱 조정 금액 (5%p 이상 이탈)</ST>
           {sells.map((h, i) => (
-            <div key={i} style={{ display: "flex", justifyBetween: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid var(--border-glass)", fontSize: 12 }}>
-              <div><span style={{ fontWeight: 500 }}>{h.etf}</span><span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>{h.cls}</span></div>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid var(--border-glass)", fontSize: 12 }}>
+              <div><span style={{ fontWeight: 500 }}>{h.cls}</span></div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ color: "var(--text-dim)" }}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
                 <Badge c="#791f1f" bg="#fcebeb">매도 {fmt(h.actionAmt)}원</Badge>
@@ -69,8 +78,8 @@ export default function CompareWeights({ portfolio }) {
             </div>
           ))}
           {buys.map((h, i) => (
-            <div key={i} style={{ display: "flex", justifyBetween: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid var(--border-glass)", fontSize: 12 }}>
-              <div><span style={{ fontWeight: 500 }}>{h.etf}</span><span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 6 }}>{h.cls}</span></div>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid var(--border-glass)", fontSize: 12 }}>
+              <div><span style={{ fontWeight: 500 }}>{h.cls}</span></div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ color: "var(--text-dim)" }}>{h.cur.toFixed(1)}% → {h.bm.toFixed(1)}%</span>
                 <Badge c="#0c447c" bg="#e6f1fb">매수 {fmt(Math.abs(h.actionAmt))}원</Badge>
@@ -80,6 +89,7 @@ export default function CompareWeights({ portfolio }) {
           <div style={{ marginTop: "1rem", padding: ".875rem", background: "var(--bg-main)", borderRadius: "var(--radius-md)", fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
             총 매도: {fmt(sells.reduce((s, h) => s + h.actionAmt, 0))}원 →
             총 매수: {fmt(Math.abs(buys.reduce((s, h) => s + h.actionAmt, 0)))}원
+          </div>
           </div>
         </Card>
       )}

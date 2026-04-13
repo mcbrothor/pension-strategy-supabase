@@ -240,6 +240,22 @@ test.describe("Rebalance UI asset-class display", () => {
     await expect(list).not.toContainText("예수금(현금)");
   });
 
+  test("benchmark rebalance adjustment card groups amounts by asset class only", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("tab-validation").click();
+
+    const card = page.getByTestId("benchmark-rebalance-adjustments");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("리밸런싱 조정 금액");
+    await expect(card).toContainText("미국주식");
+    await expect(card).toContainText("국내주식");
+    await expect(card).toContainText("금");
+    await expect(card).not.toContainText("KODEX 미국S&P500");
+    await expect(card).not.toContainText("ACE 미국빅테크TOP7 Plus");
+    await expect(card).not.toContainText("TIGER 코리아TOP10");
+    await expect(card).not.toContainText("예수금(현금)");
+  });
+
   test("top KPI risk metrics use one-year realized portfolio history", async ({ page }) => {
     await page.goto("/");
 
