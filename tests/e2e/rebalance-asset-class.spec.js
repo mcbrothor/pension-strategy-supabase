@@ -185,6 +185,37 @@ async function mockPortfolioApi(page) {
     });
   });
 
+  await page.route("**/api/momentum", async (route) => {
+    const up = Array.from({ length: 13 }, (_, index) => 100 + index);
+    const mildUp = Array.from({ length: 13 }, (_, index) => 100 + index * 0.5);
+    const down = Array.from({ length: 13 }, (_, index) => 112 - index);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        strategyId: route.request().postDataJSON()?.strategyId || "gtaa5",
+        data: {
+          priceSeries: {
+            미국주식: { monthlyCloses: up },
+            선진국주식: { monthlyCloses: mildUp },
+            미국중기채권: { monthlyCloses: up },
+            미국장기채권: { monthlyCloses: up },
+            원자재: { monthlyCloses: down },
+            부동산리츠: { monthlyCloses: down },
+            금: { monthlyCloses: up },
+            신흥국주식: { monthlyCloses: down },
+            현금MMF: { monthlyCloses: mildUp },
+          },
+          dailyCloses: Array.from({ length: 220 }, (_, index) => 100 + index * 0.1),
+          unempData: { rate: 4.0, avg12m: 4.2, isBelow: true },
+        },
+        mode: "role_based_momentum",
+        updatedAt: "2026-04-13T00:00:00.000Z",
+      }),
+    });
+  });
+
   await page.route("**/api/kis-history**", async (route) => {
     const url = new URL(route.request().url());
     const ticker = url.searchParams.get("ticker");
@@ -254,6 +285,22 @@ test.describe("Rebalance UI asset-class display", () => {
     await expect(card).not.toContainText("ACE 미국빅테크TOP7 Plus");
     await expect(card).not.toContainText("TIGER 코리아TOP10");
     await expect(card).not.toContainText("예수금(현금)");
+  });
+
+  test("dynamic strategy selection shows momentum calculation detail and formula", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("tab-validation").click();
+    await page.getByTestId("strategy-card-gtaa5").click();
+
+    const detail = page.getByTestId("momentum-calculation-detail");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText("동적 배분 계산 상세");
+    await expect(detail).toContainText("원천 신호");
+    await expect(detail).toContainText("도출 과정");
+    await expect(detail).toContainText("계산 로직");
+    await expect(detail).toContainText("SMA10_i");
+    await expect(detail).toContainText("정책 반영 후 최종 비중");
+    await expect(detail).toContainText("현금MMF");
   });
 
   test("top KPI risk metrics use one-year realized portfolio history", async ({ page }) => {

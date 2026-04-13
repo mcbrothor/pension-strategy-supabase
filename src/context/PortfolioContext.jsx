@@ -2,12 +2,47 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext.jsx';
 import { DEMO_PORTFOLIO, STRATEGIES } from '../constants/index.js';
-import { computeTargets } from '../services/momentumEngine.js';
+import { computeTargetDecision } from '../services/momentumEngine.js';
+import {
+  DEFAULT_ALLOCATION_POLICY,
+  DEFAULT_CASH_DEPLOYMENT_STATE,
+  DEFAULT_RETIREMENT_PLAN,
+  applyPolicyToTargetWeights,
+  calculateRetirementTarget,
+  compositionToWeights,
+} from '../services/portfolioPlanningEngine.js';
 
 const PortfolioContext = createContext();
 const PORTFOLIO_STORAGE_PREFIX = 'portfolio_state';
 const PORTFOLIO_BACKUP_STORAGE_PREFIX = 'portfolio_state_backup';
 const PORTFOLIO_BACKUP_LIMIT = 5;
+
+function normalizeAllocationPolicy(policy = {}) {
+  const merged = {
+    ...DEFAULT_ALLOCATION_POLICY,
+    ...policy,
+    cashDeploymentState: {
+      ...DEFAULT_CASH_DEPLOYMENT_STATE,
+      ...(policy?.cashDeploymentState || {}),
+    },
+  };
+
+  return {
+    ...merged,
+    baseCashPct: Math.min(Math.max(Number(merged.baseCashPct) || 0, 0), 30),
+    glidePathStepPct: Math.min(Math.max(Number(merged.glidePathStepPct) || 0, 0), 10),
+    glidePathTriggerYears: Math.min(Math.max(Number(merged.glidePathTriggerYears) || 10, 1), 30),
+    maxSafePct: Math.min(Math.max(Number(merged.maxSafePct) || 60, 0), 100),
+  };
+}
+
+function normalizeRetirementPlan(plan = {}, currentBalance = 0) {
+  return calculateRetirementTarget({
+    ...DEFAULT_RETIREMENT_PLAN,
+    currentBalance: currentBalance || DEFAULT_RETIREMENT_PLAN.currentBalance,
+    ...plan,
+  });
+}
 
 function getPortfolioStorageKey(userId) {
   return `${PORTFOLIO_STORAGE_PREFIX}:${userId || 'demo'}`;
@@ -108,6 +143,11 @@ function readPortfolioLike(parsed) {
     Number(parsed?.principalTotal) ||
     holdings.reduce((sum, item) => sum + (Number(item.costAmt) || 0), 0) ||
     DEMO_PORTFOLIO.principalTotal;
+  const allocationPolicy = normalizeAllocationPolicy(parsed?.allocationPolicy);
+  const retirementPlan = normalizeRetirementPlan(
+    parsed?.retirementPlan,
+    Number(parsed?.retirementPlan?.currentBalance) || Number(parsed?.evaluationAmount) || total || DEMO_PORTFOLIO.total
+  );
 
   return {
     ...DEMO_PORTFOLIO,
@@ -117,6 +157,8 @@ function readPortfolioLike(parsed) {
     evaluationAmount: Number(parsed?.evaluationAmount) || 0,
     evaluationUpdatedAt: parsed?.evaluationUpdatedAt || null,
     principalUpdatedAt: parsed?.principalUpdatedAt || null,
+    retirementPlan,
+    allocationPolicy,
     holdings,
     history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
   };
@@ -129,12 +171,16 @@ function readPortfolioLike(parsed) {
  */
 function buildDefaultTargets(strategy) {
   if (!strategy || !strategy.composition) return {};
-  const targets = {};
-  strategy.composition.forEach(c => {
-    // w가 명시되어 있으면 사용, 없으면 0 (momentum 역할별 동적 결정이므로)
-    targets[c.cls] = c.w || 0;
-  });
-  return targets;
+  return compositionToWeights(strategy.composition);
+}
+
+function buildAdjustedTargets(strategy, rawTargets, retirementPlan, allocationPolicy) {
+  if (!strategy) return {};
+  const hasRawTargets =
+    rawTargets &&
+    Object.keys(rawTargets).some((key) => Number.isFinite(Number(rawTargets[key])) && Number(rawTargets[key]) > 0);
+  const baseTargets = hasRawTargets ? rawTargets : buildDefaultTargets(strategy);
+  return applyPolicyToTargetWeights(baseTargets, allocationPolicy, retirementPlan);
 }
 
 /**
@@ -150,7 +196,7 @@ function remapHoldingsTargets(holdings, targetMap) {
 
 export function PortfolioProvider({ children }) {
   const { user, loading: authLoading, lastUserId } = useAuth();
-  const [portfolio, setPortfolio] = useState(DEMO_PORTFOLIO);
+  const [portfolio, setPortfolio] = useState(() => readPortfolioLike(DEMO_PORTFOLIO));
   const [isFetching, setIsFetching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDemo, setIsDemo] = useState(true);
@@ -164,13 +210,40 @@ export function PortfolioProvider({ children }) {
   const [targetSource, setTargetSource] = useState('default'); // 'api' | 'fallback_last' | 'fallback_default'
   const [degradedMode, setDegradedMode] = useState(false);
 
-  const fetchMomentumTargets = async (strategyId) => {
+  const fetchMomentumTargets = async (strategyId, options = {}) => {
     const s = STRATEGIES.find(it => it.id === strategyId);
+    const retirementPlan = options.retirementPlan || portfolio.retirementPlan;
+    const allocationPolicy = options.allocationPolicy || portfolio.allocationPolicy;
+    const returnDetails = Boolean(options.returnDetails);
+    const buildMomentumResult = (rawTargets, detail, source) => {
+      const adjustedTargets = buildAdjustedTargets(s, rawTargets, retirementPlan, allocationPolicy);
+      if (!returnDetails) return adjustedTargets;
+      return {
+        targets: adjustedTargets,
+        rawTargets,
+        detail: {
+          ...(detail || {}),
+          source,
+          adjustedTargets,
+          policy: {
+            baseCashPct: Number(allocationPolicy?.baseCashPct) || 0,
+            glidePathStepPct: Number(allocationPolicy?.glidePathStepPct) || 0,
+            glidePathTriggerYears: Number(allocationPolicy?.glidePathTriggerYears) || 0,
+            maxSafePct: Number(allocationPolicy?.maxSafePct) || 0,
+            yearsToRetirement:
+              Number(retirementPlan?.retirementAge) > 0 && Number(retirementPlan?.currentAge) > 0
+                ? Math.max(Number(retirementPlan.retirementAge) - Number(retirementPlan.currentAge), 0)
+                : null,
+          },
+        },
+        source,
+      };
+    };
     if (!s || s.type !== "momentum") {
       setMomentumTargets({});
       setDegradedMode(false);
       setTargetSource('default');
-      return {};
+      return returnDetails ? { targets: {}, rawTargets: {}, detail: null, source: 'default' } : {};
     }
     try {
       const res = await fetch("/api/momentum", {
@@ -184,14 +257,15 @@ export function PortfolioProvider({ children }) {
       const data = await res.json();
       if (data.ok && data.data) {
         // API 성공: 서버에서 받은 데이터로 타깃 비중 프론트엔드 직접 계산
-        const computedTargets = computeTargets(strategyId, data.data, s.composition);
+        const decision = computeTargetDecision(strategyId, data.data, s.composition);
+        const computedTargets = decision.targets;
         
         if (computedTargets) {
           setMomentumTargets(computedTargets);
           setLastGoodTargets(computedTargets); // 직전 유효 타깃 보존
           setDegradedMode(false);
           setTargetSource('api');
-          return computedTargets;
+          return buildMomentumResult(computedTargets, decision.detail, 'api');
         }
       }
     } catch (e) {
@@ -205,7 +279,16 @@ export function PortfolioProvider({ children }) {
       setMomentumTargets(lastGoodTargets);
       setDegradedMode(true);
       setTargetSource('fallback_last');
-      return lastGoodTargets;
+      return buildMomentumResult(lastGoodTargets, {
+        strategyId,
+        title: "직전 유효 모멘텀 비중 사용",
+        summary: "현재 모멘텀 데이터 조회가 실패하여 직전에 성공했던 동적 비중을 사용했습니다.",
+        formula: "adjusted_targets = applyPolicyToTargetWeights(last_good_momentum_targets, allocationPolicy, retirementPlan)",
+        dataBasis: "직전 성공한 모멘텀 계산 결과",
+        steps: ["현재 API 응답 실패", "직전 유효 타깃을 불러옴", "평시 현금/글라이드패스 정책을 다시 적용"],
+        rows: [],
+        rawTargets: lastGoodTargets,
+      }, 'fallback_last');
     }
 
     // 직전 유효 타깃도 없는 경우: 전략 기본 비중으로 보수적 폴백
@@ -214,7 +297,16 @@ export function PortfolioProvider({ children }) {
     setMomentumTargets(defaultTargets);
     setDegradedMode(true);
     setTargetSource('fallback_default');
-    return defaultTargets;
+    return buildMomentumResult(defaultTargets, {
+      strategyId,
+      title: "기본 전략 비중 폴백",
+      summary: "현재 모멘텀 데이터와 직전 유효 결과가 모두 없어 전략 정의의 기본 비중을 사용했습니다.",
+      formula: "adjusted_targets = applyPolicyToTargetWeights(composition_weights, allocationPolicy, retirementPlan)",
+      dataBasis: "전략 composition 기본값",
+      steps: ["현재 API 응답 실패", "직전 유효 타깃 없음", "전략 기본 비중에 평시 현금/글라이드패스 정책 적용"],
+      rows: [],
+      rawTargets: defaultTargets,
+    }, 'fallback_default');
   };
 
   const refreshRestoreInfo = React.useCallback(
@@ -255,27 +347,27 @@ export function PortfolioProvider({ children }) {
         .single();
       if (cErr && cErr.code !== "PGRST116") throw cErr;
 
+      const storedPortfolio = readStoredPortfolio(user.id);
+      const allocationPolicy = normalizeAllocationPolicy(storedPortfolio?.allocationPolicy || portfolio.allocationPolicy);
+      const retirementPlanForTargets = normalizeRetirementPlan(
+        storedPortfolio?.retirementPlan || portfolio.retirementPlan,
+        Number(configs?.evaluation_amount) || Number(storedPortfolio?.retirementPlan?.currentBalance) || 0
+      );
       const strategyId = configs?.strategy_id || "allseason";
       const currentStrat = STRATEGIES.find(s => s.id === strategyId);
       
       let dynamicTargets = {};
       if (currentStrat?.type === "momentum") {
-        dynamicTargets = await fetchMomentumTargets(strategyId);
+        dynamicTargets = await fetchMomentumTargets(strategyId, {
+          retirementPlan: retirementPlanForTargets,
+          allocationPolicy,
+        });
       }
 
-      const assetClassTargetMap = {};
-      if (currentStrat) {
-        if (currentStrat.type === "fixed" && currentStrat.composition) {
-          currentStrat.composition.forEach(c => {
-            if (c.cls) assetClassTargetMap[c.cls] = c.w || 0;
-          });
-        } else if (currentStrat.type === "momentum" && dynamicTargets) {
-          // dynamicTargets는 이제 API 실패 시에도 폴백 값이 들어있음
-          Object.keys(dynamicTargets).forEach(key => {
-            assetClassTargetMap[key] = dynamicTargets[key] || 0;
-          });
-        }
-      }
+      const assetClassTargetMap =
+        currentStrat?.type === "momentum"
+          ? dynamicTargets
+          : buildAdjustedTargets(currentStrat, null, retirementPlanForTargets, allocationPolicy);
 
       const { data: snapshots, error: sErr } = await supabase
         .from("snapshots")
@@ -305,6 +397,17 @@ export function PortfolioProvider({ children }) {
       const holdingsPrincipalTotal = mappedHoldings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
       const principalTotal =
         configs?.principal_total != null ? Number(configs.principal_total) : holdingsPrincipalTotal;
+      const retirementPlan = normalizeRetirementPlan(
+        {
+          ...retirementPlanForTargets,
+          ...(storedPortfolio?.retirementPlan || {}),
+          currentBalance:
+            Number(storedPortfolio?.retirementPlan?.currentBalance) ||
+            Number(configs?.evaluation_amount) ||
+            total,
+        },
+        Number(configs?.evaluation_amount) || total
+      );
 
       const nextPortfolio = {
         ...DEMO_PORTFOLIO,
@@ -321,6 +424,8 @@ export function PortfolioProvider({ children }) {
         evaluationAmount: Number(configs?.evaluation_amount) || 0,
         evaluationUpdatedAt: configs?.evaluation_updated_at || null,
         principalUpdatedAt: configs?.principal_updated_at || null,
+        retirementPlan,
+        allocationPolicy,
       };
 
       setPortfolio(nextPortfolio);
@@ -556,6 +661,63 @@ export function PortfolioProvider({ children }) {
     }
   };
 
+  const updateRetirementPlan = React.useCallback((patch) => {
+    setPortfolio(prev => {
+      const retirementPlan = normalizeRetirementPlan(
+        {
+          ...prev.retirementPlan,
+          ...patch,
+        },
+        Number(prev.evaluationAmount) || Number(prev.total) || 0
+      );
+      const currentStrat = STRATEGIES.find(s => s.id === prev.strategy);
+      const targetMap = buildAdjustedTargets(
+        currentStrat,
+        currentStrat?.type === "momentum" ? momentumTargets : null,
+        retirementPlan,
+        prev.allocationPolicy
+      );
+      const nextPortfolio = {
+        ...prev,
+        retirementPlan,
+        holdings: remapHoldingsTargets(prev.holdings, targetMap),
+      };
+      writeStoredPortfolio(user?.id, nextPortfolio);
+      return nextPortfolio;
+    });
+  }, [momentumTargets, user?.id]);
+
+  const updateAllocationPolicy = React.useCallback((patch) => {
+    setPortfolio(prev => {
+      const allocationPolicy = normalizeAllocationPolicy({
+        ...prev.allocationPolicy,
+        ...patch,
+        cashDeploymentState: {
+          ...(prev.allocationPolicy?.cashDeploymentState || {}),
+          ...(patch?.cashDeploymentState || {}),
+        },
+      });
+      const currentStrat = STRATEGIES.find(s => s.id === prev.strategy);
+      const targetMap = buildAdjustedTargets(
+        currentStrat,
+        currentStrat?.type === "momentum" ? momentumTargets : null,
+        prev.retirementPlan,
+        allocationPolicy
+      );
+      const nextPortfolio = {
+        ...prev,
+        allocationPolicy,
+        holdings: remapHoldingsTargets(prev.holdings, targetMap),
+      };
+      writeStoredPortfolio(user?.id, nextPortfolio);
+      return nextPortfolio;
+    });
+  }, [momentumTargets, user?.id]);
+
+  const updateCashDeploymentState = React.useCallback((cashDeploymentState) => {
+    updateAllocationPolicy({ cashDeploymentState });
+  }, [updateAllocationPolicy]);
+
   const restorePreviousPortfolio = React.useCallback(() => {
     if (!user) {
       setSyncStatus('auth_required');
@@ -575,19 +737,12 @@ export function PortfolioProvider({ children }) {
 
     if (!user) {
       // 정합성 수정: 데모 모드에서도 전략 변경 시 holdings target 즉시 재계산
-      const newTargetMap = {};
-      if (newStrat) {
-        if (newStrat.type === "fixed" && newStrat.composition) {
-          newStrat.composition.forEach(c => {
-            if (c.cls) newTargetMap[c.cls] = c.w || 0;
-          });
-        } else if (newStrat.type === "momentum") {
-          // 데모 모드에서는 API 호출 대신 기본 composition 비중 사용
-          newStrat.composition.forEach(c => {
-            if (c.cls) newTargetMap[c.cls] = c.w || 0;
-          });
-        }
-      }
+      const newTargetMap = buildAdjustedTargets(
+        newStrat,
+        null,
+        portfolio.retirementPlan,
+        portfolio.allocationPolicy
+      );
 
       setPortfolio(p => ({
         ...p,
@@ -621,13 +776,17 @@ export function PortfolioProvider({ children }) {
       return;
     }
 
-    setPortfolio({
+    setPortfolio(readPortfolioLike({
       ...DEMO_PORTFOLIO,
       holdings: [],
       total: 0,
       principalTotal: 0,
       history: [],
-    });
+      retirementPlan: {
+        ...DEFAULT_RETIREMENT_PLAN,
+        currentBalance: 0,
+      },
+    }));
     setIsDemo(true);
     setRestoreInfo({ hasBackup: false, savedAt: null });
     setSyncStatus('auth_required');
@@ -644,6 +803,9 @@ export function PortfolioProvider({ children }) {
       saveHoldings, 
       savePrincipalTotal,
       saveEvaluationAmount,
+      updateRetirementPlan,
+      updateAllocationPolicy,
+      updateCashDeploymentState,
       restorePreviousPortfolio,
       restoreInfo,
       syncStatus,

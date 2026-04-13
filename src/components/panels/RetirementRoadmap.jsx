@@ -3,18 +3,33 @@ import { Card, ST, Btn, Badge } from "../common/index.jsx";
 import { fmt, fmtR } from "../../utils/formatters.js";
 import { simulate, simulateReal, calcNeededContrib, checkWithdraw } from "../../utils/calculators.js";
 import { STRATEGIES } from "../../constants/index.js";
+import { usePortfolio } from "../../context/PortfolioContext.jsx";
 
 export default function RetirementRoadmap({ strategyId }) {
-  const [cAge, setCAge] = useState(40);
-  const [rAge, setRAge] = useState(60);
-  const [life, setLife] = useState(90);
-  const [bal, setBal] = useState(54320000);
-  const [contrib, setContrib] = useState(500000);
-  const [need, setNeed] = useState(3000000);
-  const [pension, setPension] = useState(1000000);
-  const [strat, setStrat] = useState(strategyId || "allseason");
-  const [inflation, setInflation] = useState(2.0); // 물가상승률 기본값 2%
+  const { portfolio, updateRetirementPlan } = usePortfolio();
+  const plan = portfolio.retirementPlan || {};
+  const cAge = plan.currentAge ?? 40;
+  const rAge = plan.retirementAge ?? 60;
+  const life = plan.lifeExpectancy ?? 90;
+  const bal = plan.currentBalance ?? portfolio.evaluationAmount ?? portfolio.total ?? 0;
+  const contrib = plan.monthlyContribution ?? 500000;
+  const need = plan.monthlyNeed ?? 3000000;
+  const pension = plan.monthlyPension ?? 1000000;
+  const inflation = plan.inflationPct ?? 2;
+  const [strat, setStrat] = useState(strategyId || portfolio.strategy || "allseason");
   const [showReal, setShowReal] = useState(false); // 실질 가치 토글
+  const setCAge = value => updateRetirementPlan({ currentAge: value });
+  const setRAge = value => updateRetirementPlan({ retirementAge: value });
+  const setLife = value => updateRetirementPlan({ lifeExpectancy: value });
+  const setBal = value => updateRetirementPlan({ currentBalance: value });
+  const setContrib = value => updateRetirementPlan({ monthlyContribution: value });
+  const setNeed = value => updateRetirementPlan({ monthlyNeed: value });
+  const setPension = value => updateRetirementPlan({ monthlyPension: value });
+  const setInflation = value => updateRetirementPlan({ inflationPct: value });
+
+  React.useEffect(() => {
+    setStrat(strategyId || portfolio.strategy || "allseason");
+  }, [strategyId, portfolio.strategy]);
 
   const s = STRATEGIES.find(x => x.id === strat) || STRATEGIES[3];
   const sr = s.annualRet || { cons: 0.06, base: 0.085, opt: 0.105 };
@@ -28,6 +43,8 @@ export default function RetirementRoadmap({ strategyId }) {
   // 목표 자산 계산 (은퇴 시점 기준)
   const WR = 0.03 / 12; // 은퇴 후 인출 수익률 가정 (연 3%)
   const targetNominal = netNeed > 0 ? netNeed * (1 - Math.pow(1 + WR, -(ryrs * 12))) / WR : 0;
+  const targetCagr = plan.targetCagr ?? 0;
+  const targetCagrPct = `${(targetCagr * 100).toFixed(1)}%`;
   
   // 시뮬레이션 데이터 준비
   const simC = useMemo(() => showReal ? simulateReal(bal, contrib, sr.cons * 100, inflation, yrs) : simulate(bal, contrib, sr.cons, yrs), [bal, contrib, sr.cons, yrs, inflation, showReal]);
@@ -89,6 +106,7 @@ export default function RetirementRoadmap({ strategyId }) {
           {SL("현재 잔고", bal, setBal, 0, 500000000, 5000000)}
           {SL("월 납입액", contrib, setContrib, 0, 5000000, 100000)}
           {SL("목표 생활비", need, setNeed, 1000000, 15000000, 100000)}
+          {SL("월 예상 연금", pension, setPension, 0, 5000000, 100000)}
         </Card>
 
         <Card>
@@ -103,13 +121,19 @@ export default function RetirementRoadmap({ strategyId }) {
         <Card accent={ok ? "#3b6d11" : "#a32d2d"}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
             <div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                <Badge bg="#e6f1fb" c="#0c447c">전략 메뉴 연동</Badge>
+                <Badge bg={targetCagr > 0.1 ? "#fcebeb" : "#eaf3de"} c={targetCagr > 0.1 ? "#791f1f" : "#27500a"}>
+                  필요 CAGR {targetCagrPct}
+                </Badge>
+              </div>
               <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
                 {showReal ? "필요 은퇴 자산 (현재 가치 기준)" : "필요 은퇴 자산 (명목 기준)"}
               </div>
               <div style={{ fontSize: 28, fontWeight: 700 }}>{fmt(target)}원</div>
               <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6, lineHeight: 1.5 }}>
                 은퇴 후 {ryrs}년간 매월 {fmt(showReal ? need : futureNeed)}원 인출 가정<br />
-                (기본 수익률 {fmtR(sr.base)} · 물가 상승률 {inflation}% 반영)
+                (기본 수익률 {fmtR(sr.base)} · 물가 상승률 {inflation}% · 필요 CAGR {targetCagrPct})
               </div>
             </div>
             <div style={{ textAlign: "right" }}>

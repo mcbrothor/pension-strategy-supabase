@@ -10,6 +10,7 @@ import { calculateAverageCorrelationFromHistory, generateRiskReport } from "../s
 import { getHistoryTargetCount, normalizePriceRows } from "../api/kis-history.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
+import { computeTargetDecision } from "../src/services/momentumEngine.js";
 import {
   buildReportModel,
   detectStrategyPortfolioMismatch,
@@ -121,6 +122,38 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   );
   assert.ok(instruction.text.includes("A (AAA)"));
   assert.ok(instruction.text.includes("B (BBB)"));
+}
+
+{
+  const composition = [
+    { cls: "미국주식", role: "dynamic", w: 20, risk: true },
+    { cls: "선진국주식", role: "dynamic", w: 20, risk: true },
+    { cls: "미국중기채권", role: "dynamic", w: 20, risk: false },
+    { cls: "원자재", role: "dynamic", w: 20, risk: true },
+    { cls: "부동산리츠", role: "dynamic", w: 20, risk: true },
+  ];
+  const up = Array.from({ length: 13 }, (_, index) => 100 + index);
+  const down = Array.from({ length: 13 }, (_, index) => 112 - index);
+  const decision = computeTargetDecision(
+    "gtaa5",
+    {
+      priceSeries: {
+        미국주식: { monthlyCloses: up },
+        선진국주식: { monthlyCloses: up },
+        미국중기채권: { monthlyCloses: down },
+        원자재: { monthlyCloses: down },
+        부동산리츠: { monthlyCloses: up },
+      },
+    },
+    composition
+  );
+
+  assert.equal(decision.targets.미국주식, 20);
+  assert.equal(decision.targets.미국중기채권, 0);
+  assert.equal(decision.targets.현금MMF, 40);
+  assert.equal(decision.detail.rows.length, 5);
+  assert.ok(decision.detail.formula.includes("SMA10_i"));
+  assert.ok(decision.detail.steps.some((step) => step.includes("현금MMF")));
 }
 
 {

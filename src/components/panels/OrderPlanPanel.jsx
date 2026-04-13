@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { Card, ST, Badge, MetaCard, ReasonBox } from "../common/index.jsx";
+import { Card, ST, Badge, MetaCard, ReasonBox, Btn } from "../common/index.jsx";
 import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { aggregateByAssetClass, calculateIRPRiskRatio, checkRebalanceTiming, generateActionTickets, collectReasons } from "../../services/rebalanceEngine.js";
+import { evaluateBuyTheFear } from "../../services/portfolioPlanningEngine.js";
 import { supabase } from "../../lib/supabase.js";
+import { usePortfolio } from "../../context/PortfolioContext.jsx";
 
 /**
  * 주문계획 패널 — 리밸런싱 판단 + 자산군별 조정안
@@ -11,6 +13,7 @@ import { supabase } from "../../lib/supabase.js";
  */
 export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation, fearGreed, yieldSpread }) {
   const [checked, setChecked] = useState({});
+  const { updateCashDeploymentState } = usePortfolio();
 
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
@@ -20,6 +23,17 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
   const timing = checkRebalanceTiming(portfolio.lastRebalDate, portfolio.rebalPeriod);
   const assetClassResults = aggregateByAssetClass(portfolio.holdings, total);
   const irpRiskRatio = calculateIRPRiskRatio(assetClassResults);
+  const targetWeights = assetClassResults.reduce((acc, item) => {
+    if (Number(item.target) > 0) acc[item.cls] = Number(item.target);
+    return acc;
+  }, {});
+  const fearDecision = evaluateBuyTheFear({
+    baseWeights: targetWeights,
+    baseCashPct: portfolio.allocationPolicy?.baseCashPct ?? 0,
+    state: portfolio.allocationPolicy?.cashDeploymentState,
+    signals: { vix },
+    now: new Date().toISOString(),
+  });
 
   // ActionTicket 생성 (자산군별 조정안 핵심)
   const tickets = generateActionTickets(assetClassResults, {
@@ -132,6 +146,33 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
               매수 필요액 {fmt(totalBuyAmount)}원 / 매도 참고액 {fmt(totalSellAmount)}원
               {cashGap > 0 ? ` → 추가 현금 약 ${fmt(cashGap)}원 필요 가능` : " → 매도 참고액 범위 내"}
             </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <ST>Buy the Fear 현금 운용</ST>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              <Badge c="#0c447c" bg="#e6f1fb">평시 현금 {portfolio.allocationPolicy?.baseCashPct ?? 0}%</Badge>
+              <Badge c={fearDecision.action === "deploy_cash" ? "#633806" : fearDecision.action === "restore_base_cash" ? "#27500a" : "#555"} bg={fearDecision.action === "deploy_cash" ? "#faeeda" : fearDecision.action === "restore_base_cash" ? "#eaf3de" : "var(--bg-main)"}>
+                {fearDecision.action === "deploy_cash" ? `${fearDecision.level}차 현금 투입` : fearDecision.action === "restore_base_cash" ? "평시 현금 복구" : fearDecision.action === "wait_for_confirmation" ? "확인 대기" : "대기"}
+              </Badge>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              {fearDecision.reasons.map((reason) => <div key={reason}>• {reason}</div>)}
+              {fearDecision.deploymentPct > 0 && (
+                <div style={{ marginTop: 4, color: "#633806", fontWeight: 600 }}>
+                  이번 단계 투입 비중: {fearDecision.deploymentPct.toFixed(1)}%p
+                </div>
+              )}
+            </div>
+          </div>
+          {fearDecision.action !== "hold" && (
+            <Btn sm onClick={() => updateCashDeploymentState(fearDecision.nextState)}>
+              현금 운용 상태 기록
+            </Btn>
           )}
         </div>
       </Card>
