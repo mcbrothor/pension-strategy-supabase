@@ -10,6 +10,13 @@ import { calculateAverageCorrelationFromHistory, generateRiskReport } from "../s
 import { getHistoryTargetCount, normalizePriceRows } from "../api/kis-history.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
+import {
+  buildReportModel,
+  detectStrategyPortfolioMismatch,
+  generateLlmReadyReportHTML,
+  generateRebalanceInstruction,
+} from "../src/services/reportEngine.js";
+import { safePercentFromAmounts } from "../src/utils/performance.js";
 
 const now = new Date("2026-04-08T00:00:00+09:00");
 
@@ -44,6 +51,76 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(Math.round(summary.unrealizedReturn * 10) / 10, 10);
   assert.equal(Math.round(summary.periodReturn * 10) / 10, 10);
   assert.ok(summary.benchmarkGap > 0);
+}
+
+{
+  assert.equal(safePercentFromAmounts(65000000, 1950000), null);
+  const portfolio = {
+    strategy: "allweather",
+    accountType: "연금저축",
+    total: 65000000,
+    principalTotal: 55000000,
+    retirementPlan: {
+      currentAge: 40,
+      retirementAge: 60,
+      monthlyContribution: 500000,
+      targetCagr: 0.1,
+    },
+    history: [
+      { date: "2025-01-01", total: 1950000 },
+      { date: "2026-01-01", total: 60000000 },
+    ],
+    holdings: [
+      { etf: "KODEX AI소프트웨어TOP10", code: "000001", cls: "미국주식", amt: 30000000, costAmt: 25000000, target: 12 },
+      { etf: "TIME 비만치료제액티브", code: "000002", cls: "미국주식", amt: 20000000, costAmt: 18000000, target: 12 },
+      { etf: "ACE KRX금현물", code: "411060", cls: "금", amt: 15000000, costAmt: 12000000, target: 7 },
+    ],
+  };
+  const model = buildReportModel({ portfolio, vix: 18, now });
+  assert.equal(model.performance.hasReturnAnomaly, true);
+  assert.ok(Math.abs(model.performance.periodReturn) < 20, "report should ignore scale-broken first snapshot");
+  assert.equal(model.displayStrategyName, "글로벌 테마 액티브 전략");
+  assert.equal(model.holdings[0].displayName.includes("(000001)"), true);
+  assert.equal(model.holdings[0].assetClassTag, "[미국 주식]");
+  assert.equal(model.retirementHorizon.expectedRetirementYear, 2046);
+  assert.ok(model.benchmark.periodReturn != null);
+  assert.ok(model.managerInsight.includes("매도"));
+
+  const html = generateLlmReadyReportHTML({
+    portfolio,
+    vix: 18,
+    vixSource: "test",
+    vixUpdatedAt: now.toISOString(),
+    vixError: null,
+    dataMeta: null,
+  });
+  assert.ok(html.includes("자산명(티커)"));
+  assert.ok(html.includes("자산군 태그"));
+  assert.ok(html.includes("KODEX AI소프트웨어TOP10 (000001)"));
+  assert.ok(html.includes("현재 나이 40세"));
+  assert.equal(html.includes("연금저축 (위험자산 한도 70%)"), false);
+}
+
+{
+  const mismatch = detectStrategyPortfolioMismatch(
+    { id: "allweather", name: "올웨더 2.0", type: "fixed", composition: [{ cls: "미국장기채권" }, { cls: "금" }] },
+    [
+      { etf: "AI소프트웨어 액티브", cls: "미국주식", amt: 10000000 },
+      { etf: "비만치료제 액티브", cls: "미국주식", amt: 10000000 },
+    ],
+    20000000
+  );
+  assert.equal(mismatch.mismatch, true);
+
+  const instruction = generateRebalanceInstruction(
+    [
+      { etf: "A", code: "AAA", amt: 7000000, target: 50 },
+      { etf: "B", code: "BBB", amt: 3000000, target: 50 },
+    ],
+    10000000
+  );
+  assert.ok(instruction.text.includes("A (AAA)"));
+  assert.ok(instruction.text.includes("B (BBB)"));
 }
 
 {

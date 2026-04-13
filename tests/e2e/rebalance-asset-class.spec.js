@@ -247,4 +247,19 @@ test.describe("Rebalance UI asset-class display", () => {
     await expect(page.getByTestId("kpi-mdd")).toContainText("실현 252일");
     await expect(page.getByTestId("kpi-data-grade")).toContainText("A");
   });
+
+  test("monthly report renders LLM-ready asset metadata and pension-account constraint text", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("tab-report").click();
+
+    await expect(page.getByText("개인 연금 운용 보고서")).toBeVisible();
+    await expect(page.getByText("자산 상세 분석표 (LLM-Ready)")).toBeVisible();
+    await expect(page.getByText("자산명(티커)")).toBeVisible();
+    await expect(page.getByText("자산군 태그")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "KODEX 미국S&P500 (379800)" })).toBeVisible();
+    await expect(page.getByText("[미국 주식]").first()).toBeVisible();
+    await expect(page.getByText("은퇴 준비도 진단 메타데이터")).toBeVisible();
+    await expect(page.getByText("연금저축 · 위험자산 한도 없음")).toBeVisible();
+    await expect(page.getByText("연금저축 · 위험자산 한도 70%")).toHaveCount(0);
+  });
 });

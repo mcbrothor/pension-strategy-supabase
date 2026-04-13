@@ -22,11 +22,37 @@ export function formatPercentValue(value) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
+export function safePercentFromAmounts(currentValue, baseValue, options = {}) {
+  const current = Number(currentValue);
+  const base = Number(baseValue);
+  const maxAbsPct = Number(options.maxAbsPct) || 500;
+
+  if (!Number.isFinite(current) || !Number.isFinite(base) || current <= 0 || base <= 0) {
+    return null;
+  }
+
+  const pct = ((current - base) / base) * 100;
+  if (!Number.isFinite(pct)) return null;
+
+  // Monthly reports should not show scale-error artifacts such as +3226.7%.
+  // Treat extremely large snapshot returns as invalid report bases.
+  if (Math.abs(pct) > maxAbsPct) return null;
+
+  return pct;
+}
+
+export function normalizePercentInput(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (Math.abs(num) <= 1) return num * 100;
+  return num;
+}
+
 export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet, now = new Date()) {
   const holdingsCostTotal = holdings.reduce((sum, h) => sum + (Number(h.costAmt) || 0), 0);
   const costTotal = Number(portfolio?.principalTotal) > 0 ? Number(portfolio.principalTotal) : holdingsCostTotal;
   const unrealizedPnl = costTotal > 0 ? total - costTotal : null;
-  const unrealizedReturn = costTotal > 0 ? (unrealizedPnl / costTotal) * 100 : null;
+  const unrealizedReturn = safePercentFromAmounts(total, costTotal, { maxAbsPct: 1000 });
 
   const datedHistory = (portfolio.history || [])
     .map(item => ({
@@ -40,12 +66,13 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
       return a.parsedDate - b.parsedDate;
     });
 
-  const first = datedHistory[0] || null;
+  const validHistory = datedHistory.filter(item => safePercentFromAmounts(total, item.total) != null);
+  const first = validHistory[0] || datedHistory[0] || null;
   const firstTotal = first?.total || null;
-  const periodReturn = firstTotal ? ((total - firstTotal) / firstTotal) * 100 : null;
+  const periodReturn = firstTotal ? safePercentFromAmounts(total, firstTotal) : null;
   const periodDays = first?.parsedDate ? Math.max(1, Math.round((now - first.parsedDate) / 86400000)) : null;
-  const annualizedReturn = firstTotal && periodDays >= 30
-    ? (Math.pow(total / firstTotal, 365 / periodDays) - 1) * 100
+  const annualizedReturn = periodReturn != null && periodDays >= 30
+    ? (Math.pow(1 + periodReturn / 100, 365 / periodDays) - 1) * 100
     : null;
   const benchmarkPeriodReturn = periodDays
     ? (Math.pow(1 + annualExpRet, periodDays / 365) - 1) * 100
@@ -65,6 +92,11 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
     annualizedReturn,
     benchmarkPeriodReturn,
     benchmarkGap,
-    hasHistory: Boolean(firstTotal),
+    hasHistory: Boolean(firstTotal && periodReturn != null),
+    hasReturnAnomaly: datedHistory.length > 0 && validHistory[0] !== datedHistory[0],
+    returnAnomalyNote:
+      datedHistory.length > 0 && validHistory[0] !== datedHistory[0]
+        ? "스냅샷 기준 성과에서 스케일이 맞지 않는 과거 스냅샷을 제외했습니다."
+        : null,
   };
 }
