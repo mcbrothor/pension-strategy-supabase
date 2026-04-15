@@ -69,6 +69,7 @@ export default function PensionPilot() {
     syncStatus,
     degradedMode,
     targetSource,
+    refreshHoldingsPrices,
   } = usePortfolio();
 
   const currentStrategy = React.useMemo(() => getStrat(portfolio.strategy), [portfolio.strategy]);
@@ -250,6 +251,7 @@ export default function PensionPilot() {
               signUp={signUp}
               logout={logout}
               isSaving={isSaving}
+              onRefreshPrices={refreshHoldingsPrices}
               initialSubTab={requestedSubTab}
               onSubTabHandled={() => setRequestedSubTab(null)}
             />

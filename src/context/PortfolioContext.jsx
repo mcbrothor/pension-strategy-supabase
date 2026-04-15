@@ -626,12 +626,15 @@ export function PortfolioProvider({ children }) {
       const cashIdx = nextHoldings.findIndex(h => h.cls === CASH_CLS);
 
       if (cashIdx >= 0) {
+        // 이미 현금 항목이 있는 경우 업데이트
         nextHoldings[cashIdx] = {
           ...nextHoldings[cashIdx],
           amt: neededCash,
+          costAmt: Number(nextHoldings[cashIdx].costAmt) || neededCash, // 매수원금이 없으면 현재금액으로
           updatedAt: updatedAt
         };
       } else {
+        // 없는 경우 새로 추가
         nextHoldings.push({
           etf: "예수금(현금)",
           code: "CASH",
@@ -644,8 +647,7 @@ export function PortfolioProvider({ children }) {
         });
       }
 
-      // 3. 자산 내역 저장 (saveHoldings 재사용)
-      // 주의: saveHoldings 내부에서 loadPortfolio를 호출하므로 상태가 최종 업데이트됨
+      // 3. 자산 내역 저장
       await saveHoldings(nextHoldings);
       
       setPortfolio(prev => ({
@@ -658,6 +660,74 @@ export function PortfolioProvider({ children }) {
       console.error("Save Evaluation Error:", e.message);
       setSyncStatus('error');
       throw e;
+    }
+  };
+
+  const refreshHoldingsPrices = async () => {
+    if (!user || portfolio.holdings.length === 0) return;
+    
+    setIsFetching(true);
+    setSyncStatus('syncing');
+    
+    try {
+      const nextHoldings = [...portfolio.holdings];
+      const updatedAt = new Date().toISOString();
+      let updatedCount = 0;
+
+      for (let i = 0; i < nextHoldings.length; i++) {
+        const item = nextHoldings[i];
+        // 현금성 자산이 아니고 티커가 있는 경우만 조회
+        if (item.cls !== "현금MMF" && item.code && item.code !== "CASH") {
+          try {
+            const isDomestic = /^[0-9]/.test(item.code);
+            const response = await fetch(`/api/kis-price?ticker=${item.code}${isDomestic ? "" : "&type=overseas"}`);
+            const data = await response.json();
+            
+            if (response.ok && data.price) {
+              nextHoldings[i] = {
+                ...item,
+                price: data.price,
+                amt: (Number(item.qty) || 0) * data.price,
+                updatedAt: updatedAt
+              };
+              updatedCount++;
+            }
+            // API Rate Limit 고려하여 약간의 지연 추가 (필요시)
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (err) {
+            console.warn(`${item.etf} 시세 조회 실패:`, err);
+          }
+        }
+      }
+
+      if (updatedCount > 0) {
+        // 시세 갱신 후 평가금액에 따른 현금 재계산 로직 실행
+        const evalAmt = Number(portfolio.evaluationAmount) || 0;
+        if (evalAmt > 0) {
+          const CASH_CLS = "현금MMF";
+          const otherAmt = nextHoldings
+            .filter(h => h.cls !== CASH_CLS)
+            .reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
+          
+          const neededCash = Math.max(0, evalAmt - otherAmt);
+          const cashIdx = nextHoldings.findIndex(h => h.cls === CASH_CLS);
+          
+          if (cashIdx >= 0) {
+            nextHoldings[cashIdx] = { ...nextHoldings[cashIdx], amt: neededCash, updatedAt };
+          }
+        }
+        
+        await saveHoldings(nextHoldings);
+      }
+      
+      setSyncStatus('supabase');
+      return updatedCount;
+    } catch (e) {
+      console.error("Refresh Prices Error:", e.message);
+      setSyncStatus('error');
+      throw e;
+    } finally {
+      setIsFetching(false);
     }
   };
 
@@ -810,6 +880,7 @@ export function PortfolioProvider({ children }) {
       restoreInfo,
       syncStatus,
       updateStrategy,
+      refreshHoldingsPrices,
       fetchMomentumTargets, // 미리보기용 노출
       degradedMode,
       targetSource

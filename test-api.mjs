@@ -1,7 +1,7 @@
-import handler from './api/kis-price.js';
+import handler from './api/kis-history.js';
 
 const mockReq = {
-  query: { ticker: 'AAPL', type: 'overseas' },
+  query: { ticker: '360750', type: 'domestic' },
   method: 'GET'
 };
 

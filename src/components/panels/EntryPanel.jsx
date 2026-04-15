@@ -426,6 +426,7 @@ export default function EntryPanel({
   onPrincipalTotalChange,
   onEvaluationAmountChange,
   onRestorePrevious,
+  onRefreshPrices,
   restoreInfo,
   syncStatus,
   krEtfs = [],
@@ -876,6 +877,19 @@ export default function EntryPanel({
                 <Btn sm primary onClick={handleExportCsv} data-testid="csv-export-button" aria-label="CSV 추출" title="CSV 추출">
                   CSV 추출
                 </Btn>
+                <Btn
+                  sm
+                  onClick={async () => {
+                    if (!onRefreshPrices) return;
+                    const count = await onRefreshPrices();
+                    if (count > 0) alert(`총 ${count}개 종목의 시세가 최신으로 업데이트되었습니다.`);
+                    else alert("업데이트할 종목이 없거나 시세 조회에 실패했습니다.");
+                  }}
+                  data-testid="refresh-prices-button"
+                  style={{ background: "var(--alert-ok-color)", color: "white" }}
+                >
+                  🔄 현재가 최신화
+                </Btn>
                 <Btn sm danger onClick={clearAll} disabled={!canPersistToSupabase}>
                   전체 삭제
                 </Btn>
@@ -989,7 +1003,7 @@ export default function EntryPanel({
             <div style={{ display: "grid", gap: "10px", marginBottom: "14px" }}>
               <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "8px" }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>계좌 평가 금액 (MTS 실시간)</label>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>계좌 평가 금액 (MTS 수동)</label>
                   {portfolio.evaluationUpdatedAt && (
                     <div style={{ fontSize: "10px", color: "var(--text-dim)" }}>
                       업데이트: {formatUpdatedAt(portfolio.evaluationUpdatedAt)}
@@ -1013,6 +1027,9 @@ export default function EntryPanel({
                   placeholder="MTS상의 총 평가 금액을 입력"
                   disabled={!canPersistToSupabase}
                 />
+                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "8px", lineHeight: "1.4" }}>
+                  이 금액을 기준으로 보유 종목 평가액을 뺀 나머지가 <strong>예수금(현금)</strong>으로 자동 계산됩니다.
+                </div>
               </div>
 
               <div style={{ padding: "12px 14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
