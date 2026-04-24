@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Vercel 환경 변수 우선순위 고려
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
 function createMissingConfigBuilder() {
-  const error = new Error('Supabase URL or Anon Key is missing.');
+  const error = new Error('Supabase configuration missing in serverless environment.');
   const result = { data: null, error };
   const builder = {
     select: () => builder,
@@ -38,7 +39,7 @@ function createNoopSupabaseClient() {
 }
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Anon Key is missing. Falling back to noop client.');
+  console.warn('Supabase configuration missing in serverless environment. Falling back to noop client.');
 }
 
 export const supabase =

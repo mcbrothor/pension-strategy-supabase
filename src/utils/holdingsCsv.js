@@ -1,4 +1,4 @@
-﻿function parseCsvLine(line) {
+function parseCsvLine(line) {
   const values = [];
   let current = "";
   let inQuotes = false;
@@ -104,7 +104,7 @@ export function parseHoldingsCsvText(text, tickerMap = {}) {
       const cls =
         (idx.cls >= 0 ? row[idx.cls] : '') ||
         fromMap?.assetClass ||
-        '미국주식';
+        '미국 주식';
 
       return {
         etf,
@@ -125,9 +125,9 @@ export function parseHoldingsCsvText(text, tickerMap = {}) {
 export function buildHoldingsCsvTemplate() {
   const header = ['asset_class', 'name', 'ticker', 'qty', 'price', 'amount', 'cost_amount'];
   const sampleRows = [
-    ['미국주식', '1Q 미국S&P500', '360750', '15', '12000', '180000', '170000'],
-    ['현금MMF', 'CMA RP', 'CASH', '0', '0', '2500000', '2500000'],
-    ['해외채권', 'KODEX 미국채10년', '381170', '22', '10250', '225500', '230000'],
+    ['미국 주식', '1Q 미국S&P500', '360750', '15', '12000', '180000', '170000'],
+    ['현금', 'CMA RP', 'CASH', '0', '0', '2500000', '2500000'],
+    ['장기채', 'KODEX 미국채10년', '381170', '22', '10250', '225500', '230000'],
   ];
 
   return [header, ...sampleRows]

@@ -7,6 +7,9 @@ import {
   generateActionTickets,
 } from "../src/services/rebalanceEngine.js";
 import { calculateAverageCorrelationFromHistory, generateRiskReport } from "../src/services/riskEngine.js";
+import { applyAdaptiveOverlay, applyVolTargetOverlay } from "../src/services/overlayEngine.js";
+import { buildProxyBenchmarkCurve, calculateRollingExcessStats } from "../src/services/backtestEngine.js";
+import { summarizeTransactionPerformance } from "../src/services/transactionEngine.js";
 import { getHistoryTargetCount, normalizePriceRows } from "../api/kis-history.js";
 import { parseHoldingsCsvText, buildHoldingsCsvTemplate } from "../src/utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../src/utils/portfolioDisplay.js";
@@ -18,6 +21,7 @@ import {
   generateRebalanceInstruction,
 } from "../src/services/reportEngine.js";
 import { safePercentFromAmounts } from "../src/utils/performance.js";
+import { runRollingWalkForward } from "../src/services/walkForwardEngine.js";
 
 const now = new Date("2026-04-08T00:00:00+09:00");
 
@@ -52,6 +56,34 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(Math.round(summary.unrealizedReturn * 10) / 10, 10);
   assert.equal(Math.round(summary.periodReturn * 10) / 10, 10);
   assert.ok(summary.benchmarkGap > 0);
+  assert.equal(summary.realizedPnl, 0);
+}
+
+{
+  const transactions = [
+    { tradeDate: "2026-01-01", ticker: "AAA", assetClass: "미국 주식", side: "buy", quantity: 10, price: 100, fee: 10 },
+    { tradeDate: "2026-02-01", ticker: "AAA", assetClass: "미국 주식", side: "sell", quantity: 4, price: 120, fee: 5 },
+  ];
+  const holdings = [{ code: "AAA", cls: "미국 주식", amt: 840, costAmt: 600 }];
+  const perf = summarizeTransactionPerformance(transactions, holdings);
+  assert.equal(perf.realizedPnl, 71);
+  assert.equal(perf.unrealizedPnl, 234);
+}
+
+{
+  const base = { "미국 주식": 60, "장기채": 25, "현금": 15 };
+  const adaptive = applyAdaptiveOverlay(base, {
+    equityBand: { min: 40, max: 80, base: 60 },
+    overlays: { valuation: true, macro: true },
+  }, {
+    cape: { value: 32 },
+    creditSpread: { spread: 6.5 },
+    yieldSpread: -0.3,
+    vix: 36,
+  });
+  const volAdjusted = applyVolTargetOverlay(adaptive.targets, 18, 12);
+  assert.ok(adaptive.targetEquity < 60);
+  assert.ok(volAdjusted.volScale < 1);
 }
 
 {
@@ -96,9 +128,9 @@ const now = new Date("2026-04-08T00:00:00+09:00");
     dataMeta: null,
   });
   assert.ok(html.includes("자산명(티커)"));
-  assert.ok(html.includes("자산군 태그"));
+  assert.ok(html.includes("Asset Class"));
   assert.ok(html.includes("KODEX AI소프트웨어TOP10 (000001)"));
-  assert.ok(html.includes("현재 나이 40세"));
+  assert.ok(html.includes("Current age 40"));
   assert.equal(html.includes("연금저축 (위험자산 한도 70%)"), false);
 }
 
@@ -150,10 +182,10 @@ const now = new Date("2026-04-08T00:00:00+09:00");
 
   assert.equal(decision.targets.미국주식, 20);
   assert.equal(decision.targets.미국중기채권, 0);
-  assert.equal(decision.targets.현금MMF, 40);
+  assert.equal(decision.targets.현금, 40);
   assert.equal(decision.detail.rows.length, 5);
   assert.ok(decision.detail.formula.includes("SMA10_i"));
-  assert.ok(decision.detail.steps.some((step) => step.includes("현금MMF")));
+  assert.ok(decision.detail.steps.some((step) => step.includes("현금")));
 }
 
 {
@@ -348,6 +380,34 @@ const now = new Date("2026-04-08T00:00:00+09:00");
   assert.equal(report.dataPoints, 252);
   assert.equal(report.assetCount, 2);
   assert.equal(typeof corr, "number");
+}
+
+{
+  const benchmarkCurve = buildProxyBenchmarkCurve(800, 1000000, 0.1);
+  const strategyCurve = benchmarkCurve.map((item, index) => ({
+    ...item,
+    value: index < 400 ? item.value * 0.98 : item.value * 1.05,
+  }));
+  const rolling = calculateRollingExcessStats(strategyCurve, benchmarkCurve, 252);
+  assert.ok(rolling.excessSeries.length > 100);
+  assert.ok(rolling.positiveRatio > 0);
+}
+
+{
+  const pricesA = Array.from({ length: 520 }, (_, index) => 100 + index * 0.5);
+  const pricesB = Array.from({ length: 520 }, (_, index) => 80 + index * 0.25);
+  const result = runRollingWalkForward(
+    [
+      { ticker: "AAA", prices: pricesA },
+      { ticker: "BBB", prices: pricesB },
+    ],
+    [
+      { code: "AAA", target: 60 },
+      { code: "BBB", target: 40 },
+    ]
+  );
+  assert.ok(result.foldCount >= 3);
+  assert.ok(result.deflatedSharpe >= 0);
 }
 
 console.log("smoke tests passed");

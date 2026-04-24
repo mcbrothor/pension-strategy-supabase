@@ -45,6 +45,10 @@ export default function RetirementRoadmap({ strategyId }) {
   const targetNominal = netNeed > 0 ? netNeed * (1 - Math.pow(1 + WR, -(ryrs * 12))) / WR : 0;
   const targetCagr = plan.targetCagr ?? 0;
   const targetCagrPct = `${(targetCagr * 100).toFixed(1)}%`;
+  const annualContribution = plan.annualContribution ?? contrib * 12;
+  const taxCreditUsed = plan.taxCreditUsed ?? Math.min(annualContribution, plan.taxCreditLimit ?? 6000000);
+  const taxCreditAmount = plan.taxCreditAmount ?? Math.round(taxCreditUsed * (plan.taxCreditRate ?? 0.165));
+  const withdrawalStartAge = plan.withdrawalStartAge ?? 55;
   
   // 시뮬레이션 데이터 준비
   const simC = useMemo(() => showReal ? simulateReal(bal, contrib, sr.cons * 100, inflation, yrs) : simulate(bal, contrib, sr.cons, yrs), [bal, contrib, sr.cons, yrs, inflation, showReal]);
@@ -64,60 +68,138 @@ export default function RetirementRoadmap({ strategyId }) {
   const tx = yr => (yr / yrs) * (CW - PAD - 8) + PAD;
   const ty = v => CH - 14 - (v / (maxV || 1)) * (CH - 30);
   const lp = sim => sim.map((p, i) => `${i ? "L" : "M"}${tx(p.y).toFixed(1)},${ty(p.b).toFixed(1)}`).join(" ");
-  const ap = sim => { const l = sim.map((p, i) => `${i ? "L" : "M"}${tx(p.y).toFixed(1)},${ty(p.b).toFixed(1)}`).join(" "); return `${l} L${tx(yrs)},${CH - 14} L${tx(0)},${CH - 14} Z`; };
+  const ap = sim => { 
+    const l = sim.map((p, i) => `${i ? "L" : "M"}${tx(p.y).toFixed(1)},${ty(p.b).toFixed(1)}`).join(" "); 
+    return `${l} L${tx(yrs)},${CH - 14} L${tx(0)},${CH - 14} Z`; 
+  };
   const tgY = ty(target);
 
-  const SL = (label, val, set, min, max, step, extra) => (
-    <div style={{ marginBottom: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-dim)" }}>{label}</span><span style={{ fontSize: 13, fontWeight: 500 }}>{fmt(val)}원</span></div>
-      <input type="range" min={min} max={max} step={step} value={val} onChange={e => set(Number(e.target.value))} style={{ width: "100%" }} />
-      {extra && <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 3 }}>{extra}</div>}
-    </div>
-  );
-  
-  const SLA = (label, val, set, min, max, step, unit) => (
-    <div style={{ marginBottom: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-dim)" }}>{label}</span><span style={{ fontSize: 13, fontWeight: 500 }}>{val}{unit}</span></div>
-      <input type="range" min={min} max={max} step={step} value={val} onChange={e => set(Number(e.target.value))} style={{ width: "100%" }} />
-    </div>
-  );
+  // 공통 숫자 입력 + 게이지(슬라이더) 컴포넌트
+  const NumericInput = ({ label, value, onChange, min, max, step, unit, isMoney = false, hint }) => {
+    // 금액인 경우 만원 단위로 변환하여 표시 (10,000 -> 1)
+    const displayValue = isMoney ? Math.round(value / 10000) : value;
+    
+    const handleInputChange = (e) => {
+      let val = Number(e.target.value) || 0;
+      // 유효 범위 체크 (간단히)
+      if (val < 0) val = 0;
+      onChange(isMoney ? val * 10000 : val);
+    };
+
+    return (
+      <div style={{ marginBottom: "1.25rem" }}>
+        {/* 상단: 라벨 및 입력창 가로 배치 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-main)", fontWeight: 600 }}>{label}</span>
+            {hint && <span style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: 1 }}>{hint}</span>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <input 
+              type="number" 
+              step={step / (isMoney ? 10000 : 1)}
+              value={displayValue} 
+              onChange={handleInputChange}
+              style={{ 
+                width: isMoney ? "85px" : "60px", 
+                padding: "4px 8px", 
+                borderRadius: "6px", 
+                border: "1.5px solid var(--border-glass)", 
+                background: "var(--bg-card)", 
+                color: "var(--text-main)",
+                fontSize: "13px",
+                fontWeight: 700,
+                textAlign: "right",
+                outline: "none"
+              }}
+            />
+            <span style={{ fontSize: "12px", color: "var(--text-dim)", width: "30px" }}>{unit}</span>
+          </div>
+        </div>
+        
+        {/* 하단: 슬라이더 (게이지) - 영역 이탈 방지를 위해 여유 패딩 확보 */}
+        <div style={{ padding: "0 6px", boxSizing: "border-box" }}>
+          <input 
+            type="range" 
+            min={min} 
+            max={max} 
+            step={step} 
+            value={value} 
+            onChange={e => onChange(Number(e.target.value))} 
+            style={{ 
+              width: "100%", 
+              height: "4px", 
+              appearance: "none",
+              background: "var(--border-glass)",
+              borderRadius: "2px",
+              accentColor: "var(--color-primary)", 
+              cursor: "pointer",
+              display: "block",
+              margin: "6px 0"
+            }} 
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "255px 1fr", gap: "1rem", alignItems: "start" }}>
-      <div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "start" }}>
+      {/* 1. 설정 사이드바 (Grouped Controls) */}
+      <div style={{ flex: "1 1 320px", maxWidth: "380px", minWidth: "300px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        
+        {/* 섹션 1: 생애 주기 설정 */}
         <Card>
-          <ST>은퇴 설계 옵션</ST>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>구매력 기준 (실질 가치)</span>
-            <input type="checkbox" checked={showReal} onChange={e => setShowReal(e.target.checked)} />
-          </div>
-          {SLA("예상 물가 상승률", inflation, setInflation, 0, 10, 0.5, "%")}
+          <ST>1. 생애 주기 설정</ST>
+          <NumericInput label="현재 나이" value={cAge} onChange={setCAge} min={20} max={65} step={1} unit="세" />
+          <NumericInput label="은퇴 나이" value={rAge} onChange={v => { if (v > cAge) setRAge(v) }} min={cAge + 1} max={85} step={1} unit="세" hint="조기 은퇴 또는 정년 기준" />
+          <NumericInput label="기대 수명" value={life} onChange={setLife} min={rAge + 5} max={110} step={1} unit="세" hint="한국인 평균 수명: 남 81세/여 87세" />
         </Card>
         
+        {/* 섹션 2: 자산 및 수입 정보 */}
         <Card>
-          <ST>나이 설정</ST>
-          {SLA("현재 나이", cAge, setCAge, 25, 65, 1, "세")}
-          {SLA("은퇴 나이", rAge, v => { if (v > cAge) setRAge(v) }, cAge + 1, 75, 1, "세")}
-          {SLA("기대 수명", life, setLife, rAge + 5, 100, 1, "세")}
+          <ST>2. 자산 및 수입 정보</ST>
+          <NumericInput label="현재 잔고" value={bal} onChange={setBal} min={0} max={1000000000} step={1000000} unit="만원" isMoney hint="연금저축/IRP 합산 잔액" />
+          <NumericInput label="월 납입액" value={contrib} onChange={setContrib} min={0} max={10000000} step={100000} unit="만원" isMoney hint="매달 추가 투자하는 금액" />
+          <NumericInput label="월 예상 연금" value={pension} onChange={setPension} min={0} max={10000000} step={100000} unit="만원" isMoney hint="국민/퇴직연금 예상 수령액" />
+          <div style={{ marginTop: 8, padding: "10px 12px", background: "var(--bg-main)", borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>연금 세제 메타</div>
+            <div style={{ fontSize: 12, lineHeight: 1.7 }}>
+              연 납입액 {fmt(annualContribution)}원 / 세액공제 반영 {fmt(taxCreditUsed)}원 / 예상 세액공제 {fmt(taxCreditAmount)}원
+            </div>
+          </div>
         </Card>
 
+        {/* 섹션 3: 목표 및 환경 설정 */}
         <Card>
-          <ST>연금 자산 및 생활비</ST>
-          {SL("현재 잔고", bal, setBal, 0, 500000000, 5000000)}
-          {SL("월 납입액", contrib, setContrib, 0, 5000000, 100000)}
-          {SL("목표 생활비", need, setNeed, 1000000, 15000000, 100000)}
-          {SL("월 예상 연금", pension, setPension, 0, 5000000, 100000)}
-        </Card>
+          <ST>3. 목표 및 환경 설정</ST>
+          <NumericInput label="목표 생활비" value={need} onChange={setNeed} min={1000000} max={20000000} step={100000} unit="만원" isMoney hint="은퇴 후 한 달 생활 자금" />
+          <NumericInput label="예상 물가 상승률" value={inflation} onChange={setInflation} min={0} max={8} step={0.1} unit="%" hint="최근 10년 평균 약 2%" />
+          
+          <div style={{ borderTop: "1px solid var(--border-glass)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+            <div style={{ fontSize: "12px", color: "var(--text-main)", fontWeight: 600, marginBottom: "8px" }}>투자 전략 (기대수익률)</div>
+            <select value={strat} onChange={e => setStrat(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "1.5px solid var(--border-glass)", background: "var(--bg-card)", color: "var(--text-main)", fontSize: "13px", fontWeight: 700, cursor: "pointer", outline: "none" }}>
+              {STRATEGIES.map(s => <option key={s.id} value={s.id}>{s.name} ({fmtR(s.annualRet.base)})</option>)}
+            </select>
+          </div>
 
-        <Card>
-          <ST>투자 전략</ST>
-          <select value={strat} onChange={e => setStrat(e.target.value)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: "0.5px solid var(--border-glass)", background: "var(--bg-card)", color: "var(--text-main)" }}>
-            {STRATEGIES.map(s => <option key={s.id} value={s.id}>{s.name} ({fmtR(s.annualRet.base)})</option>)}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "1rem", padding: "8px 10px", background: "rgba(0,0,0,0.03)", borderRadius: "8px" }}>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>실질 가치 (구매력) 기준</span>
+              <span style={{ fontSize: 10, color: "var(--text-dim)" }}>물가 상승률을 차감한 가지</span>
+            </div>
+            <input type="checkbox" checked={showReal} onChange={e => setShowReal(e.target.checked)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+          </div>
+          <div style={{ marginTop: "0.75rem", padding: "10px 12px", borderRadius: 8, background: cAge < withdrawalStartAge ? "#fcebeb" : "#eaf3de", color: cAge < withdrawalStartAge ? "#791f1f" : "#27500a", fontSize: 11, lineHeight: 1.7 }}>
+            {cAge < withdrawalStartAge
+              ? `현재 ${cAge}세로 연금 수령 개시 기준 ${withdrawalStartAge}세 이전입니다. 중도 인출은 페널티 가능성이 큽니다.`
+              : `현재 ${cAge}세로 연금 수령 개시 기준 ${withdrawalStartAge}세 이상입니다. 연금 수령 시뮬레이션 검토 구간입니다.`}
+          </div>
         </Card>
       </div>
 
-      <div>
+      {/* 2. 대시보드 및 결과 영역 */}
+      <div style={{ flex: "10 1 500px", minWidth: "320px", display: "flex", flexDirection: "column", gap: "1rem" }}>
         <Card accent={ok ? "#3b6d11" : "#a32d2d"}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
             <div>
@@ -134,6 +216,9 @@ export default function RetirementRoadmap({ strategyId }) {
               <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6, lineHeight: 1.5 }}>
                 은퇴 후 {ryrs}년간 매월 {fmt(showReal ? need : futureNeed)}원 인출 가정<br />
                 (기본 수익률 {fmtR(sr.base)} · 물가 상승률 {inflation}% · 필요 CAGR {targetCagrPct})
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.6 }}>
+                55세 수령 개시 기준: {withdrawalStartAge}세 · 연 세액공제 예상 {fmt(taxCreditAmount)}원
               </div>
             </div>
             <div style={{ textAlign: "right" }}>

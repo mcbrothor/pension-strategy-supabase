@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext.jsx';
 import { DEMO_PORTFOLIO, STRATEGIES } from '../constants/index.js';
 import { computeTargetDecision } from '../services/momentumEngine.js';
+import { applyAdaptiveOverlay, applyVolTargetOverlay } from '../services/overlayEngine.js';
 import {
+  CASH_ASSET_CLASS,
   DEFAULT_ALLOCATION_POLICY,
   DEFAULT_CASH_DEPLOYMENT_STATE,
   DEFAULT_RETIREMENT_PLAN,
@@ -11,6 +13,30 @@ import {
   calculateRetirementTarget,
   compositionToWeights,
 } from '../services/portfolioPlanningEngine.js';
+import { isUuidLike, normalizeTransaction } from '../services/transactionEngine.js';
+
+const ASSET_CLASS_MAPPING = {
+  // 주식
+  "미국주식": "미국 주식", "선진국주식": "미국 주식", "신흥국주식": "미국 주식",
+  "US Stock": "미국 주식", "Developed Stock": "미국 주식", "Emerging Stock": "미국 주식",
+  "국내주식": "국내 주식", "KR Stock": "국내 주식",
+  // 채권 (장기)
+  "미국장기채권": "장기채", "미국중기채권": "장기채", "물가연동채권": "장기채",
+  "US Long Bond": "장기채", "US Mid Bond": "장기채", "TIPS": "장기채",
+  // 채권 (단기)
+  "미국단기채권": "단기채", "국내채권": "단기채", "회사채": "단기채",
+  "하이일드채권": "단기채", "신흥국채권": "단기채", "글로벌채권": "단기채",
+  "Bond": "단기채", "Corporate Bond": "단기채", "High Yield": "단기채",
+  // 실물자산
+  "금": "실물자산", "원자재": "실물자산", "부동산리츠": "실물자산",
+  "Gold": "실물자산", "Commodity": "실물자산", "REIT": "실물자산", "Real Assets": "실물자산",
+  // 현금
+  "현금MMF": "현금", "Cash": "현금", "Cash MMF": "현금"
+};
+
+function migrateAssetClass(cls) {
+  return ASSET_CLASS_MAPPING[cls] || cls;
+}
 
 const PortfolioContext = createContext();
 const PORTFOLIO_STORAGE_PREFIX = 'portfolio_state';
@@ -55,6 +81,7 @@ function getPortfolioBackupStorageKey(userId) {
 function normalizeHolding(item = {}) {
   return {
     ...item,
+    cls: migrateAssetClass(item.cls),
     qty: Number(item.qty) || 0,
     price: Number(item.price) || 0,
     amt: Number(item.amt) || 0,
@@ -62,6 +89,51 @@ function normalizeHolding(item = {}) {
     target: Number(item.target) || 0,
     updatedAt: item.updatedAt || null,
   };
+}
+
+function normalizeTransactions(items = []) {
+  return Array.isArray(items) ? items.map((item, index) => normalizeTransaction(item, index)) : [];
+}
+
+function normalizeStrategyOverlay(overlay = null) {
+  if (!overlay || typeof overlay !== "object") return null;
+  return {
+    source: overlay.source || "default",
+    targets: overlay.targets || null,
+    overlaySummary: overlay.overlaySummary || null,
+    targetEquity: Number.isFinite(Number(overlay.targetEquity)) ? Number(overlay.targetEquity) : null,
+    volScale: Number.isFinite(Number(overlay.volScale)) ? Number(overlay.volScale) : null,
+    updatedAt: overlay.updatedAt || null,
+  };
+}
+
+const CASH_TICKER = 'CASH';
+const CASH_NAME = '예수금(현금)';
+
+function reconcileCashHolding(items = [], evaluationAmount = 0, updatedAt = null) {
+  const rows = Array.isArray(items) ? items.map((item) => normalizeHolding(item)) : [];
+  const nonCashRows = rows.filter((item) => item.code !== CASH_TICKER);
+  const existingCash = rows.find((item) => item.code === CASH_TICKER) || null;
+  const nonCashTotal = nonCashRows.reduce((sum, item) => sum + (Number(item.amt) || 0), 0);
+  const cashAmount =
+    Number(evaluationAmount) > 0
+      ? Math.max(0, Number(evaluationAmount) - nonCashTotal)
+      : Math.max(0, Number(existingCash?.amt) || 0);
+
+  return [
+    ...nonCashRows,
+    normalizeHolding({
+      ...(existingCash || {}),
+      etf: existingCash?.etf || CASH_NAME,
+      code: CASH_TICKER,
+      cls: existingCash?.cls || CASH_ASSET_CLASS,
+      qty: 0,
+      price: 0,
+      amt: cashAmount,
+      costAmt: Number(existingCash?.costAmt) || cashAmount,
+      updatedAt: updatedAt || existingCash?.updatedAt || null,
+    }),
+  ];
 }
 
 function readStoredPortfolio(userId) {
@@ -82,6 +154,8 @@ function writeStoredPortfolio(userId, portfolio) {
   const normalizedPortfolio = {
     ...portfolio,
     holdings: Array.isArray(portfolio?.holdings) ? portfolio.holdings.map(normalizeHolding) : [],
+    transactions: normalizeTransactions(portfolio?.transactions),
+    strategyOverlay: normalizeStrategyOverlay(portfolio?.strategyOverlay),
   };
   window.localStorage.setItem(getPortfolioStorageKey(userId), JSON.stringify(normalizedPortfolio));
 
@@ -160,6 +234,8 @@ function readPortfolioLike(parsed) {
     retirementPlan,
     allocationPolicy,
     holdings,
+    transactions: normalizeTransactions(parsed?.transactions || DEMO_PORTFOLIO.transactions),
+    strategyOverlay: normalizeStrategyOverlay(parsed?.strategyOverlay),
     history: Array.isArray(parsed?.history) ? parsed.history : DEMO_PORTFOLIO.history,
   };
 }
@@ -209,14 +285,69 @@ export function PortfolioProvider({ children }) {
   // 정합성 수정: 현재 target의 출처를 추적 (UI에서 폴백 경고 표시용)
   const [targetSource, setTargetSource] = useState('default'); // 'api' | 'fallback_last' | 'fallback_default'
   const [degradedMode, setDegradedMode] = useState(false);
+  const [strategyOverlay, setStrategyOverlay] = useState(() => normalizeStrategyOverlay(DEMO_PORTFOLIO.strategyOverlay));
+
+  const persistConfigPatch = React.useCallback(async (patch = {}) => {
+    if (!user) return;
+    try {
+      await supabase.from('config').upsert({
+        user_id: user.id,
+        ...patch,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.warn('Config Persist Warning:', error.message);
+    }
+  }, [user]);
+
+  const resolveOverlayTargets = async (strategy, rawTargets, options = {}) => {
+    if (!strategy || !rawTargets) {
+      return { targets: rawTargets || {}, overlay: null };
+    }
+
+    try {
+      const [signalRes, vixRes] = await Promise.all([
+        fetch("/api/market-signals"),
+        fetch("/api/vix").catch(() => null),
+      ]);
+      const signalData = signalRes?.ok ? await signalRes.json() : null;
+      const vixData = vixRes?.ok ? await vixRes.json() : null;
+      const adaptive = applyAdaptiveOverlay(rawTargets, strategy, {
+        cape: signalData?.cape,
+        creditSpread: signalData?.creditSpread,
+        yieldSpread: signalData?.yieldCurve?.spread,
+        vix: Number(vixData?.vix) || null,
+      });
+      const volAdjusted = applyVolTargetOverlay(
+        adaptive.targets,
+        Number(options.realizedVol ?? portfolio?.riskSnapshot?.vol) || null,
+        12
+      );
+      return {
+        targets: volAdjusted.targets,
+        overlay: {
+          source: "market_signals",
+          targets: volAdjusted.targets,
+          overlaySummary: adaptive.overlaySummary,
+          targetEquity: adaptive.targetEquity,
+          volScale: volAdjusted.volScale,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    } catch (error) {
+      console.warn("Overlay Fetch Error:", error.message);
+      return { targets: rawTargets, overlay: null };
+    }
+  };
 
   const fetchMomentumTargets = async (strategyId, options = {}) => {
     const s = STRATEGIES.find(it => it.id === strategyId);
     const retirementPlan = options.retirementPlan || portfolio.retirementPlan;
     const allocationPolicy = options.allocationPolicy || portfolio.allocationPolicy;
     const returnDetails = Boolean(options.returnDetails);
-    const buildMomentumResult = (rawTargets, detail, source) => {
-      const adjustedTargets = buildAdjustedTargets(s, rawTargets, retirementPlan, allocationPolicy);
+    const buildMomentumResult = (rawTargets, detail, source, overlayState = null) => {
+      const overlayTargets = overlayState?.volTargets || overlayState?.targets || rawTargets;
+      const adjustedTargets = buildAdjustedTargets(s, overlayTargets, retirementPlan, allocationPolicy);
       if (!returnDetails) return adjustedTargets;
       return {
         targets: adjustedTargets,
@@ -224,6 +355,9 @@ export function PortfolioProvider({ children }) {
         detail: {
           ...(detail || {}),
           source,
+          overlaySummary: overlayState?.overlaySummary || null,
+          targetEquity: overlayState?.targetEquity ?? null,
+          volScale: overlayState?.volScale ?? 1,
           adjustedTargets,
           policy: {
             baseCashPct: Number(allocationPolicy?.baseCashPct) || 0,
@@ -261,11 +395,14 @@ export function PortfolioProvider({ children }) {
         const computedTargets = decision.targets;
         
         if (computedTargets) {
-          setMomentumTargets(computedTargets);
-          setLastGoodTargets(computedTargets); // 직전 유효 타깃 보존
+          const overlayResolved = await resolveOverlayTargets(s, computedTargets, options);
+          const finalTargets = overlayResolved.targets || computedTargets;
+          setMomentumTargets(finalTargets);
+          setLastGoodTargets(finalTargets); // 직전 유효 타깃 보존
           setDegradedMode(false);
           setTargetSource('api');
-          return buildMomentumResult(computedTargets, decision.detail, 'api');
+          setStrategyOverlay(normalizeStrategyOverlay(overlayResolved.overlay));
+          return buildMomentumResult(computedTargets, decision.detail, 'api', overlayResolved.overlay);
         }
       }
     } catch (e) {
@@ -348,13 +485,16 @@ export function PortfolioProvider({ children }) {
       if (cErr && cErr.code !== "PGRST116") throw cErr;
 
       const storedPortfolio = readStoredPortfolio(user.id);
-      const allocationPolicy = normalizeAllocationPolicy(storedPortfolio?.allocationPolicy || portfolio.allocationPolicy);
+      const allocationPolicy = normalizeAllocationPolicy(
+        configs?.allocation_policy || storedPortfolio?.allocationPolicy || portfolio.allocationPolicy
+      );
       const retirementPlanForTargets = normalizeRetirementPlan(
-        storedPortfolio?.retirementPlan || portfolio.retirementPlan,
+        configs?.retirement_plan || storedPortfolio?.retirementPlan || portfolio.retirementPlan,
         Number(configs?.evaluation_amount) || Number(storedPortfolio?.retirementPlan?.currentBalance) || 0
       );
       const strategyId = configs?.strategy_id || "allseason";
       const currentStrat = STRATEGIES.find(s => s.id === strategyId);
+      let resolvedOverlay = normalizeStrategyOverlay(configs?.strategy_overlay || storedPortfolio?.strategyOverlay || strategyOverlay);
       
       let dynamicTargets = {};
       if (currentStrat?.type === "momentum") {
@@ -362,10 +502,15 @@ export function PortfolioProvider({ children }) {
           retirementPlan: retirementPlanForTargets,
           allocationPolicy,
         });
+      } else if (currentStrat) {
+        const overlayResolved = await resolveOverlayTargets(currentStrat, buildDefaultTargets(currentStrat));
+        dynamicTargets = overlayResolved.targets || {};
+        resolvedOverlay = normalizeStrategyOverlay(overlayResolved.overlay);
+        setStrategyOverlay(resolvedOverlay);
       }
 
       const assetClassTargetMap =
-        currentStrat?.type === "momentum"
+        currentStrat?.type === "momentum" || Object.keys(dynamicTargets || {}).length > 0
           ? dynamicTargets
           : buildAdjustedTargets(currentStrat, null, retirementPlanForTargets, allocationPolicy);
 
@@ -375,6 +520,32 @@ export function PortfolioProvider({ children }) {
         .eq("user_id", user.id)
         .order("date", { ascending: true });
       if (sErr) throw sErr;
+
+      let transactions = [];
+      try {
+        const { data: transactionRows, error: tErr } = await supabase
+          .from("holdings_transactions")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("trade_date", { ascending: false });
+        if (!tErr && Array.isArray(transactionRows)) {
+          transactions = transactionRows.map((row, index) => normalizeTransaction({
+            id: row.id,
+            trade_date: row.trade_date,
+            ticker: row.ticker,
+            name: row.name,
+            asset_class: row.asset_class,
+            side: row.side,
+            quantity: row.quantity,
+            price: row.price,
+            fee: row.fee,
+            memo: row.memo,
+            created_at: row.created_at,
+          }, index));
+        }
+      } catch (transactionError) {
+        console.warn("Transaction Load Warning:", transactionError.message);
+      }
 
       const mappedHoldings = (holdings || []).map(it => {
         const target = assetClassTargetMap[it.asset_class] || 0;
@@ -400,6 +571,7 @@ export function PortfolioProvider({ children }) {
       const retirementPlan = normalizeRetirementPlan(
         {
           ...retirementPlanForTargets,
+          ...(configs?.retirement_plan || {}),
           ...(storedPortfolio?.retirementPlan || {}),
           currentBalance:
             Number(storedPortfolio?.retirementPlan?.currentBalance) ||
@@ -415,6 +587,8 @@ export function PortfolioProvider({ children }) {
         total: total,
         principalTotal,
         holdings: mappedHoldings,
+        transactions,
+        strategyOverlay: resolvedOverlay,
         history: (snapshots || []).map(s => ({
           date: s.date,
           total: s.total_amt,
@@ -426,6 +600,7 @@ export function PortfolioProvider({ children }) {
         principalUpdatedAt: configs?.principal_updated_at || null,
         retirementPlan,
         allocationPolicy,
+        notifyEmail: configs?.notify_email || null,
       };
 
       setPortfolio(nextPortfolio);
@@ -449,7 +624,8 @@ export function PortfolioProvider({ children }) {
   };
 
   const saveHoldings = async (items) => {
-    const total = items.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
+    const reconciledItems = reconcileCashHolding(items, portfolio.evaluationAmount, new Date().toISOString());
+    const total = reconciledItems.reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
 
     if (!user) {
       setSyncStatus('auth_required');
@@ -465,7 +641,7 @@ export function PortfolioProvider({ children }) {
       const existingRes = await supabase.from('holdings').select('id').eq('user_id', user.id);
       const existingDBIds = (existingRes.data || []).map(r => r.id);
       
-      const incomingIds = items.map(it => it.id).filter(id => id);
+      const incomingIds = reconciledItems.map(it => it.id).filter(id => id);
       const idsToDelete = existingDBIds.filter(id => !incomingIds.includes(id));
       
       if (idsToDelete.length > 0) {
@@ -474,14 +650,14 @@ export function PortfolioProvider({ children }) {
       }
       
       const now = new Date().toISOString();
-      const normalizedItems = items
-        .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0 || it.cls === '현금MMF'))
+      const normalizedItems = reconciledItems
+        .filter(it => it.code && (Number(it.qty) > 0 || Number(it.amt) > 0 || it.cls === '현금'))
         .map(it => {
           const payload = {
             user_id: user.id,
             ticker: it.code,
             name: it.etf || "",
-            asset_class: it.cls || "",
+            asset_class: migrateAssetClass(it.cls || ""),
             quantity: Number(it.qty) || 0,
             current_price: Number(it.price) || 0,
             cost_amt: Number(it.costAmt) || 0,
@@ -507,7 +683,7 @@ export function PortfolioProvider({ children }) {
       }
 
       const weights = {};
-      items.forEach(h => {
+      reconciledItems.forEach(h => {
         if (total > 0 && h.cls) {
           const w = (Number(h.amt) / total) * 100;
           weights[h.cls] = (weights[h.cls] || 0) + w;
@@ -550,6 +726,66 @@ export function PortfolioProvider({ children }) {
       console.error("Save Error:", e.message);
       setSyncStatus('error');
       throw e;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveTransactions = async (items) => {
+    const normalizedTransactions = normalizeTransactions(items);
+
+    if (!user) {
+      setPortfolio((prev) => {
+        const nextPortfolio = { ...prev, transactions: normalizedTransactions };
+        writeStoredPortfolio('demo', nextPortfolio);
+        return nextPortfolio;
+      });
+      return normalizedTransactions;
+    }
+
+    setIsSaving(true);
+    try {
+      setSyncStatus('syncing');
+      const existing = await supabase.from('holdings_transactions').select('id').eq('user_id', user.id);
+      const existingIds = (existing.data || []).map((row) => row.id);
+      const incomingIds = normalizedTransactions.map((item) => item.id).filter(isUuidLike);
+      const idsToDelete = existingIds.filter((id) => !incomingIds.includes(id));
+      if (idsToDelete.length > 0) {
+        const { error } = await supabase.from('holdings_transactions').delete().in('id', idsToDelete);
+        if (error) throw error;
+      }
+
+      const payload = normalizedTransactions.map((item) => ({
+        ...(isUuidLike(item.id) ? { id: item.id } : {}),
+        user_id: user.id,
+        trade_date: item.tradeDate,
+        ticker: item.ticker,
+        name: item.name,
+        asset_class: migrateAssetClass(item.assetClass),
+        side: item.side,
+        quantity: item.quantity,
+        price: item.price,
+        fee: item.fee,
+        memo: item.memo,
+        created_at: item.createdAt || new Date().toISOString(),
+      }));
+
+      if (payload.length > 0) {
+        const { error } = await supabase.from('holdings_transactions').upsert(payload, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      await loadPortfolio();
+      setSyncStatus('supabase');
+      return normalizedTransactions;
+    } catch (e) {
+      console.warn("Save Transactions Warning:", e.message);
+      setPortfolio((prev) => {
+        const nextPortfolio = { ...prev, transactions: normalizedTransactions };
+        writeStoredPortfolio(user.id, nextPortfolio);
+        return nextPortfolio;
+      });
+      return normalizedTransactions;
     } finally {
       setIsSaving(false);
     }
@@ -613,40 +849,21 @@ export function PortfolioProvider({ children }) {
         });
       if (configErr) throw configErr;
 
-      // 2. 예수금 자동 계산
-      // 현금MMF를 제외한 나머지 자산의 합계 계산
-      const CASH_CLS = "현금MMF";
-      const otherAmt = portfolio.holdings
-        .filter(h => h.cls !== CASH_CLS)
-        .reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
-      
-      const neededCash = Math.max(0, evalAmt - otherAmt);
-
-      const nextHoldings = [...portfolio.holdings];
-      const cashIdx = nextHoldings.findIndex(h => h.cls === CASH_CLS);
-
-      if (cashIdx >= 0) {
-        // 이미 현금 항목이 있는 경우 업데이트
-        nextHoldings[cashIdx] = {
-          ...nextHoldings[cashIdx],
-          amt: neededCash,
-          costAmt: Number(nextHoldings[cashIdx].costAmt) || neededCash, // 매수원금이 없으면 현재금액으로
-          updatedAt: updatedAt
-        };
-      } else {
-        // 없는 경우 새로 추가
-        nextHoldings.push({
-          etf: "예수금(현금)",
-          code: "CASH",
-          cls: CASH_CLS,
-          qty: 0,
-          price: 0,
-          amt: neededCash,
-          costAmt: neededCash,
-          updatedAt: updatedAt
+      // 1-1. 이력(History) 누적 기록
+      await supabase
+        .from('asset_history')
+        .insert({
+          user_id: user.id,
+          evaluation_amount: evalAmt,
+          recorded_at: updatedAt
         });
-      }
 
+      // ?? ?? ?? ???? ???(??) ?? row ???
+      const nextHoldings = reconcileCashHolding(portfolio.holdings, evalAmt, updatedAt);
+
+      // ?? ?? ??
+      await saveHoldings(nextHoldings);
+      
       // 3. 자산 내역 저장
       await saveHoldings(nextHoldings);
       
@@ -677,7 +894,7 @@ export function PortfolioProvider({ children }) {
       for (let i = 0; i < nextHoldings.length; i++) {
         const item = nextHoldings[i];
         // 현금성 자산이 아니고 티커가 있는 경우만 조회
-        if (item.cls !== "현금MMF" && item.code && item.code !== "CASH") {
+        if (item.cls !== "현금" && item.code && item.code !== "CASH") {
           try {
             const isDomestic = /^[0-9]/.test(item.code);
             const response = await fetch(`/api/kis-price?ticker=${item.code}${isDomestic ? "" : "&type=overseas"}`);
@@ -701,23 +918,8 @@ export function PortfolioProvider({ children }) {
       }
 
       if (updatedCount > 0) {
-        // 시세 갱신 후 평가금액에 따른 현금 재계산 로직 실행
-        const evalAmt = Number(portfolio.evaluationAmount) || 0;
-        if (evalAmt > 0) {
-          const CASH_CLS = "현금MMF";
-          const otherAmt = nextHoldings
-            .filter(h => h.cls !== CASH_CLS)
-            .reduce((sum, h) => sum + (Number(h.amt) || 0), 0);
-          
-          const neededCash = Math.max(0, evalAmt - otherAmt);
-          const cashIdx = nextHoldings.findIndex(h => h.cls === CASH_CLS);
-          
-          if (cashIdx >= 0) {
-            nextHoldings[cashIdx] = { ...nextHoldings[cashIdx], amt: neededCash, updatedAt };
-          }
-        }
-        
-        await saveHoldings(nextHoldings);
+        const nextRows = reconcileCashHolding(nextHoldings, portfolio.evaluationAmount, updatedAt);
+        await saveHoldings(nextRows);
       }
       
       setSyncStatus('supabase');
@@ -743,7 +945,7 @@ export function PortfolioProvider({ children }) {
       const currentStrat = STRATEGIES.find(s => s.id === prev.strategy);
       const targetMap = buildAdjustedTargets(
         currentStrat,
-        currentStrat?.type === "momentum" ? momentumTargets : null,
+        currentStrat?.type === "momentum" ? momentumTargets : strategyOverlay?.targets || null,
         retirementPlan,
         prev.allocationPolicy
       );
@@ -753,9 +955,12 @@ export function PortfolioProvider({ children }) {
         holdings: remapHoldingsTargets(prev.holdings, targetMap),
       };
       writeStoredPortfolio(user?.id, nextPortfolio);
+      void persistConfigPatch({
+        retirement_plan: retirementPlan,
+      });
       return nextPortfolio;
     });
-  }, [momentumTargets, user?.id]);
+  }, [momentumTargets, persistConfigPatch, strategyOverlay, user?.id]);
 
   const updateAllocationPolicy = React.useCallback((patch) => {
     setPortfolio(prev => {
@@ -770,7 +975,7 @@ export function PortfolioProvider({ children }) {
       const currentStrat = STRATEGIES.find(s => s.id === prev.strategy);
       const targetMap = buildAdjustedTargets(
         currentStrat,
-        currentStrat?.type === "momentum" ? momentumTargets : null,
+        currentStrat?.type === "momentum" ? momentumTargets : strategyOverlay?.targets || null,
         prev.retirementPlan,
         allocationPolicy
       );
@@ -780,13 +985,21 @@ export function PortfolioProvider({ children }) {
         holdings: remapHoldingsTargets(prev.holdings, targetMap),
       };
       writeStoredPortfolio(user?.id, nextPortfolio);
+      void persistConfigPatch({
+        allocation_policy: allocationPolicy,
+      });
       return nextPortfolio;
     });
-  }, [momentumTargets, user?.id]);
+  }, [momentumTargets, persistConfigPatch, strategyOverlay, user?.id]);
 
   const updateCashDeploymentState = React.useCallback((cashDeploymentState) => {
     updateAllocationPolicy({ cashDeploymentState });
   }, [updateAllocationPolicy]);
+
+  const saveNotifyEmail = React.useCallback(async (email) => {
+    setPortfolio((prev) => ({ ...prev, notifyEmail: email }));
+    void persistConfigPatch({ notify_email: email });
+  }, [persistConfigPatch]);
 
   const restorePreviousPortfolio = React.useCallback(() => {
     if (!user) {
@@ -806,10 +1019,18 @@ export function PortfolioProvider({ children }) {
     const newStrat = STRATEGIES.find(it => it.id === strategyId);
 
     if (!user) {
-      // 정합성 수정: 데모 모드에서도 전략 변경 시 holdings target 즉시 재계산
+      let rawTargets = buildDefaultTargets(newStrat);
+      let overlay = null;
+      if (newStrat?.type === "momentum") {
+        rawTargets = await fetchMomentumTargets(strategyId);
+      } else {
+        const overlayResolved = await resolveOverlayTargets(newStrat, rawTargets);
+        rawTargets = overlayResolved.targets;
+        overlay = overlayResolved.overlay;
+      }
       const newTargetMap = buildAdjustedTargets(
         newStrat,
-        null,
+        rawTargets,
         portfolio.retirementPlan,
         portfolio.allocationPolicy
       );
@@ -819,22 +1040,49 @@ export function PortfolioProvider({ children }) {
         strategy: strategyId,
         // DEMO_PORTFOLIO의 rebalPeriod를 새 전략에 맞게 갱신
         rebalPeriod: newStrat?.rebal || p.rebalPeriod,
+        strategyOverlay: normalizeStrategyOverlay(overlay),
         // holdings의 target을 새 전략 기준으로 재매핑
         holdings: remapHoldingsTargets(p.holdings, newTargetMap)
       }));
+      setStrategyOverlay(normalizeStrategyOverlay(overlay));
       return;
     }
 
     try {
-      await supabase.from('config').upsert({
-        user_id: user.id,
+      const configPatch = {
         strategy_id: strategyId,
-        updated_at: new Date().toISOString()
-      });
-      if (newStrat?.type === "momentum") await fetchMomentumTargets(strategyId);
+      };
+      if (newStrat?.type === "momentum") {
+        await persistConfigPatch(configPatch);
+        await fetchMomentumTargets(strategyId);
+      } else {
+        const overlayResolved = await resolveOverlayTargets(newStrat, buildDefaultTargets(newStrat));
+        const normalizedOverlay = normalizeStrategyOverlay(overlayResolved.overlay);
+        setStrategyOverlay(normalizedOverlay);
+        await persistConfigPatch({
+          ...configPatch,
+          strategy_overlay: normalizedOverlay,
+        });
+      }
       await loadPortfolio();
     } catch (e) {
       console.error("Strategy Update Error:", e.message);
+    }
+  };
+
+  const fetchAssetHistory = async () => {
+    if (!user) return [];
+    try {
+      const { data, error } = await supabase
+        .from("asset_history")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("recorded_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.error("Fetch History Error:", e.message);
+      return [];
     }
   };
 
@@ -849,6 +1097,7 @@ export function PortfolioProvider({ children }) {
     setPortfolio(readPortfolioLike({
       ...DEMO_PORTFOLIO,
       holdings: [],
+      transactions: [],
       total: 0,
       principalTotal: 0,
       history: [],
@@ -873,9 +1122,11 @@ export function PortfolioProvider({ children }) {
       saveHoldings, 
       savePrincipalTotal,
       saveEvaluationAmount,
+      saveTransactions,
       updateRetirementPlan,
       updateAllocationPolicy,
       updateCashDeploymentState,
+      saveNotifyEmail,
       restorePreviousPortfolio,
       restoreInfo,
       syncStatus,
@@ -883,7 +1134,10 @@ export function PortfolioProvider({ children }) {
       refreshHoldingsPrices,
       fetchMomentumTargets, // 미리보기용 노출
       degradedMode,
-      targetSource
+      targetSource,
+      fetchAssetHistory,
+      transactions: portfolio.transactions || [],
+      strategyOverlay,
     }}>
       {children}
     </PortfolioContext.Provider>

@@ -6,6 +6,8 @@
  *   자산군별 동적 비중을 산출합니다.
  */
 
+import { getCachedTokenFromDB, saveTokenToDB } from "./_lib/token-storage.js";
+
 const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
   ? "https://openapi.koreainvestment.com:9443" 
   : "https://openapivts.koreainvestment.com:29443";
@@ -14,6 +16,7 @@ let cachedToken = null;
 let tokenExpiry = 0;
 let tokenPromise = null;
 
+// CORS 설정 및 유틸리티
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
@@ -42,6 +45,13 @@ async function getAccessToken() {
   
   tokenPromise = (async () => {
     try {
+      const dbResult = await getCachedTokenFromDB('kis');
+      if (dbResult) {
+        cachedToken = dbResult.token;
+        tokenExpiry = dbResult.expiry;
+        return cachedToken;
+      }
+
       const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -55,6 +65,7 @@ async function getAccessToken() {
       if (data.access_token) {
         cachedToken = data.access_token;
         tokenExpiry = now + (data.expires_in - 60) * 1000;
+        await saveTokenToDB('kis', data.access_token, data.expires_in);
         return cachedToken;
       }
     } catch (e) {

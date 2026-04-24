@@ -70,10 +70,56 @@ export function runWalkForward(historicalData, holdings, splitRatio = 0.5) {
     robustness = 0;
   }
 
+  const deflatedSharpe = Number((((oosResult.cagr || 0) / Math.max(Math.abs(oosResult.mdd || 1), 1)) * Math.max(robustness, 0)).toFixed(2));
   return {
     isResult,
     oosResult,
     robustness: Number(robustness.toFixed(2)),
-    status: robustness >= 0.5 ? 'Pass (Robust)' : 'Fail (Overfitted)'
+    deflatedSharpe,
+    status: robustness >= 0.5 && deflatedSharpe > 0.5 ? 'Pass (Robust)' : 'Fail (Overfitted)',
+    foldCount: 1,
+  };
+}
+
+export function runRollingWalkForward(historicalData, holdings, foldSize = 126, stepSize = 63) {
+  if (!historicalData?.length || !holdings?.length) return null;
+
+  const folds = [];
+  const minLen = Math.min(...historicalData.map((item) => item.prices?.length || 0));
+  if (!Number.isFinite(minLen) || minLen < foldSize * 2) return null;
+
+  for (let start = 0; start + foldSize * 2 <= minLen; start += stepSize) {
+    const isData = historicalData.map((item) => ({
+      ticker: item.ticker,
+      prices: item.prices.slice(start, start + foldSize),
+    }));
+    const oosData = historicalData.map((item) => ({
+      ticker: item.ticker,
+      prices: item.prices.slice(start + foldSize, start + foldSize * 2),
+    }));
+    const isResult = runBacktest(isData, holdings);
+    const oosResult = runBacktest(oosData, holdings);
+    if (isResult && oosResult) {
+      const robustness = isResult.cagr !== 0 ? oosResult.cagr / isResult.cagr : 0;
+      folds.push({
+        isResult,
+        oosResult,
+        robustness: Number(robustness.toFixed(2)),
+      });
+    }
+  }
+
+  if (folds.length === 0) return null;
+  const avgRobustness = folds.reduce((acc, fold) => acc + fold.robustness, 0) / folds.length;
+  const avgOosCagr = folds.reduce((acc, fold) => acc + (fold.oosResult.cagr || 0), 0) / folds.length;
+  const avgOosMdd = folds.reduce((acc, fold) => acc + Math.abs(fold.oosResult.mdd || 0), 0) / folds.length;
+  const deflatedSharpe = Number(((avgOosCagr / Math.max(avgOosMdd, 1)) * Math.max(avgRobustness, 0)).toFixed(2));
+
+  return {
+    folds,
+    robustness: Number(avgRobustness.toFixed(2)),
+    deflatedSharpe,
+    status: avgRobustness >= 0.5 && deflatedSharpe > 0.5 ? 'Pass (Robust)' : 'Fail (Overfitted)',
+    foldCount: folds.length,
   };
 }

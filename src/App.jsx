@@ -7,6 +7,7 @@ import { usePortfolio } from "./context/PortfolioContext.jsx";
 import { Badge, Btn } from "./components/common/index.jsx";
 import ConfirmModal from "./components/common/ConfirmModal.jsx";
 import KPIStrip from "./components/common/KPIStrip.jsx";
+import PanelErrorBoundary from "./components/common/PanelErrorBoundary.jsx";
 import { usePortfolioRiskReport } from "./hooks/usePortfolioRiskReport.js";
 
 const DailyCheckPanel = React.lazy(() => import("./components/panels/DailyCheckPanel.jsx"));
@@ -14,6 +15,7 @@ const RiskPanel = React.lazy(() => import("./components/panels/RiskPanel.jsx"));
 const OrderPlanPanel = React.lazy(() => import("./components/panels/OrderPlanPanel.jsx"));
 const ValidationPanel = React.lazy(() => import("./components/panels/ValidationPanel.jsx"));
 const MonthlyReport = React.lazy(() => import("./components/panels/MonthlyReport.jsx"));
+const AssetPanel = React.lazy(() => import("./components/panels/AssetPanel.jsx"));
 const SettingsPanel = React.lazy(() => import("./components/panels/SettingsPanel.jsx"));
 
 import { getStrat } from "./utils/helpers.js";
@@ -24,7 +26,8 @@ const TABS = [
   { id: "orders", label: "주문계획", num: 3 },
   { id: "validation", label: "전략검증", num: 4 },
   { id: "report", label: "리포트", num: 5 },
-  { id: "settings", label: "설정", num: 6 },
+  { id: "asset", label: "자산", num: 6 },
+  { id: "settings", label: "설정", num: 7 },
 ];
 
 export default function PensionPilot() {
@@ -50,9 +53,13 @@ export default function PensionPilot() {
     fearGreed,
     yieldSpread,
     unemployment,
+    creditSpread,
+    capeRatio,
     signalsLoading,
     signalsError,
     fetchMarketSignals,
+    vixMeta,
+    signalMeta,
   } = useMarket();
 
   const {
@@ -64,12 +71,14 @@ export default function PensionPilot() {
     saveHoldings,
     savePrincipalTotal,
     saveEvaluationAmount,
+    saveTransactions,
     restorePreviousPortfolio,
     restoreInfo,
     syncStatus,
     degradedMode,
     targetSource,
     refreshHoldingsPrices,
+    saveNotifyEmail,
   } = usePortfolio();
 
   const currentStrategy = React.useMemo(() => getStrat(portfolio.strategy), [portfolio.strategy]);
@@ -139,7 +148,7 @@ export default function PensionPilot() {
 
       <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 1rem" }}>
         <KPIStrip
-          total={oneYearRisk.total}
+          total={portfolio.evaluationAmount || oneYearRisk.total}
           totalDiff={null}
           vix={vix}
           vixMeta={vixUpdatedAt ? { freshness: (() => { const age = (Date.now() - new Date(vixUpdatedAt).getTime()) / 60000; return age <= 5 ? "realtime" : age <= 60 ? "delayed" : "cached"; })() } : null}
@@ -176,85 +185,122 @@ export default function PensionPilot() {
 
         <Suspense fallback={<div style={{ padding: "1rem", fontSize: 12, color: "var(--text-dim)" }}>패널 로딩 중...</div>}>
           {tab === "daily" && (
-            <DailyCheckPanel
-              portfolio={portfolio}
-              vix={vix}
-              vixSource={vixSource}
-              vixUpdatedAt={vixUpdatedAt}
-              vixLoading={vixLoading}
-              vixError={vixError}
-              masterError={masterError}
-              onFetchVix={fetchVix}
-              onGo={setTab}
-              avgCorrelation={avgCorrelation}
-              corrUpdatedAt={corrUpdatedAt}
-              corrLoading={corrLoading}
-              onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
-              degradedMode={degradedMode}
-              targetSource={targetSource}
-              fearGreed={fearGreed}
-              yieldSpread={yieldSpread}
-              unemployment={unemployment}
-              signalsLoading={signalsLoading}
-              signalsError={signalsError}
-              onRefreshSignals={fetchMarketSignals}
-            />
+            <PanelErrorBoundary>
+              <DailyCheckPanel
+                portfolio={portfolio}
+                vix={vix}
+                vixSource={vixSource}
+                vixUpdatedAt={vixUpdatedAt}
+                vixLoading={vixLoading}
+                vixError={vixError}
+                masterError={masterError}
+                onFetchVix={fetchVix}
+                onGo={setTab}
+                avgCorrelation={avgCorrelation}
+                corrUpdatedAt={corrUpdatedAt}
+                corrLoading={corrLoading}
+                onRefreshCorr={() => refreshCorrelation(portfolio.holdings)}
+                degradedMode={degradedMode}
+                targetSource={targetSource}
+                fearGreed={fearGreed}
+                yieldSpread={yieldSpread}
+                unemployment={unemployment}
+                signalsLoading={signalsLoading}
+                signalsError={signalsError}
+                onRefreshSignals={fetchMarketSignals}
+              />
+            </PanelErrorBoundary>
           )}
 
-          {tab === "risk" && <RiskPanel portfolio={portfolio} />}
+          {tab === "risk" && <PanelErrorBoundary><RiskPanel portfolio={portfolio} /></PanelErrorBoundary>}
 
           {tab === "orders" && (
-            <OrderPlanPanel
-              portfolio={portfolio}
-              vix={vix}
-              vixSource={vixSource}
-              vixUpdatedAt={vixUpdatedAt}
-              avgCorrelation={avgCorrelation}
-              fearGreed={fearGreed?.score ?? null}
-              yieldSpread={yieldSpread?.spread ?? null}
-            />
+            <PanelErrorBoundary>
+              <OrderPlanPanel
+                portfolio={portfolio}
+                vix={vix}
+                vixSource={vixSource}
+                vixUpdatedAt={vixUpdatedAt}
+                avgCorrelation={avgCorrelation}
+                fearGreed={fearGreed?.score ?? null}
+                yieldSpread={yieldSpread?.spread ?? null}
+                creditSpread={creditSpread?.spread ?? null}
+                capeRatio={capeRatio?.value ?? null}
+                signalMeta={signalMeta}
+              />
+            </PanelErrorBoundary>
           )}
 
           {tab === "validation" && (
-            <ValidationPanel
-              portfolio={portfolio}
-              accountType={portfolio.accountType}
-              onStrategyApply={handleSelectStrategy}
-            />
+            <PanelErrorBoundary>
+              <ValidationPanel
+                portfolio={portfolio}
+                accountType={portfolio.accountType}
+                onStrategyApply={handleSelectStrategy}
+                strategy={currentStrategy}
+              />
+            </PanelErrorBoundary>
           )}
 
           {tab === "report" && (
-            <MonthlyReport
-              portfolio={portfolio}
-              vix={vix}
-              vixSource={vixSource}
-              vixUpdatedAt={vixUpdatedAt}
-              vixError={vixError}
-            />
+            <PanelErrorBoundary>
+              <MonthlyReport
+                portfolio={portfolio}
+                vix={vix}
+                vixSource={vixSource}
+                vixUpdatedAt={vixUpdatedAt}
+                vixError={vixError}
+                vixMeta={vixMeta}
+                signalMeta={signalMeta}
+              />
+            </PanelErrorBoundary>
+          )}
+          
+          {tab === "asset" && (
+            <PanelErrorBoundary>
+              <AssetPanel
+                portfolio={portfolio}
+                setPortfolio={setPortfolio}
+                saveHoldings={saveHoldings}
+                savePrincipalTotal={savePrincipalTotal}
+                saveEvaluationAmount={saveEvaluationAmount}
+                saveTransactions={saveTransactions}
+                restorePreviousPortfolio={restorePreviousPortfolio}
+                restoreInfo={restoreInfo}
+                syncStatus={syncStatus}
+                krEtfs={krEtfs}
+                tickerMap={tickerMap}
+                masterError={masterError}
+                onRefreshPrices={refreshHoldingsPrices}
+              />
+            </PanelErrorBoundary>
           )}
 
           {tab === "settings" && (
-            <SettingsPanel
-              portfolio={portfolio}
-              setPortfolio={setPortfolio}
-              saveHoldings={saveHoldings}
-              savePrincipalTotal={savePrincipalTotal}
-              saveEvaluationAmount={saveEvaluationAmount}
-              restorePreviousPortfolio={restorePreviousPortfolio}
-              restoreInfo={restoreInfo}
-              syncStatus={syncStatus}
-              krEtfs={krEtfs}
-              tickerMap={tickerMap}
-              masterError={masterError}
-              user={user}
-              login={login}
-              signUp={signUp}
-              logout={logout}
-              isSaving={isSaving}
-              onRefreshPrices={refreshHoldingsPrices}
-              initialSubTab={requestedSubTab}
-              onSubTabHandled={() => setRequestedSubTab(null)}
-            />
+            <PanelErrorBoundary>
+              <SettingsPanel
+                portfolio={portfolio}
+                setPortfolio={setPortfolio}
+                saveHoldings={saveHoldings}
+                savePrincipalTotal={savePrincipalTotal}
+                saveEvaluationAmount={saveEvaluationAmount}
+                restorePreviousPortfolio={restorePreviousPortfolio}
+                restoreInfo={restoreInfo}
+                syncStatus={syncStatus}
+                krEtfs={krEtfs}
+                tickerMap={tickerMap}
+                masterError={masterError}
+                user={user}
+                login={login}
+                signUp={signUp}
+                logout={logout}
+                isSaving={isSaving}
+                onRefreshPrices={refreshHoldingsPrices}
+                onNotifyEmailChange={saveNotifyEmail}
+                initialSubTab={requestedSubTab}
+                onSubTabHandled={() => setRequestedSubTab(null)}
+              />
+            </PanelErrorBoundary>
           )}
         </Suspense>
       </div>

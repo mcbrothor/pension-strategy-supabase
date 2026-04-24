@@ -78,7 +78,8 @@ body {
 }
 
 /* Input Styling Override (Light Mode Focus) */
-input, select {
+/* range 타입은 슬라이더이므로 일반 input 스타일에서 제외 */
+input:not([type="range"]), select {
   background: var(--bg-input) !important;
   border: 1px solid #cbd5e1 !important; /* Visible Borders requested */
   color: var(--text-main) !important;
@@ -86,10 +87,28 @@ input, select {
   padding: 10px 14px !important;
   transition: all 0.2s !important;
 }
-input:focus, select:focus {
+input:not([type="range"]):focus, select:focus {
   border-color: var(--color-primary) !important;
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Range Input (게이지/슬라이더) 전용 스타일 — 영역 정 가운데 배치 */
+input[type="range"] {
+  -webkit-appearance: auto;
+  appearance: auto;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: block;
+  width: 100%;
+  margin: 8px auto;
+  cursor: pointer;
+}
+input[type="range"]:focus {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* Optimization for table inputs */

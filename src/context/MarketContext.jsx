@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculatePearsonCorr } from '../utils/calculators';
+import { buildMetricMeta } from '../services/marketData.js';
 
 const MarketContext = createContext();
 
@@ -14,6 +15,8 @@ const safeParseJSON = (key, defaultVal) => {
   }
 };
 
+const pickSignalValue = (nextValue, fallbackValue) => (nextValue != null ? nextValue : fallbackValue);
+
 export function MarketProvider({ children }) {
   const savedVix = safeParseJSON('vix_data', { vix: null, source: 'Init', updatedAt: null });
 
@@ -22,6 +25,7 @@ export function MarketProvider({ children }) {
   const [vixUpdatedAt, setVixUpdatedAt] = useState(savedVix.updatedAt);
   const [vixLoading, setVixLoading] = useState(false);
   const [vixError, setVixError] = useState(null);
+  const [vixMeta, setVixMeta] = useState(null);
   const [krEtfs, setKrEtfs] = useState([]);
   const [tickerMap, setTickerMap] = useState({});
   const [masterError, setMasterError] = useState(null);
@@ -35,8 +39,11 @@ export function MarketProvider({ children }) {
   const [fearGreed, setFearGreed] = useState(savedSignals.fearGreed || null);
   const [yieldSpread, setYieldSpread] = useState(savedSignals.yieldSpread || null);
   const [unemployment, setUnemployment] = useState(savedSignals.unemployment || null);
+  const [creditSpread, setCreditSpread] = useState(savedSignals.creditSpread || null);
+  const [capeRatio, setCapeRatio] = useState(savedSignals.cape || null);
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [signalsError, setSignalsError] = useState(null);
+  const [signalMeta, setSignalMeta] = useState(null);
 
   const fetchVix = async () => {
     setVixLoading(true);
@@ -54,6 +61,12 @@ export function MarketProvider({ children }) {
           setVix(newData.vix);
           setVixSource(newData.source);
           setVixUpdatedAt(newData.updatedAt);
+          setVixMeta(buildMetricMeta({
+            source: newData.source,
+            updatedAt: newData.updatedAt,
+            responseTimeMs: 0,
+            missingRatio: 0,
+          }));
           localStorage.setItem('vix_data', JSON.stringify(newData));
           setVixLoading(false);
           return;
@@ -79,23 +92,49 @@ export function MarketProvider({ children }) {
     setSignalsError(null);
     try {
       const res = await fetch('/api/market-signals');
-      if (!res.ok) throw new Error(`시장 시그널 조회 실패 (Status: ${res.status})`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data?.warning || `?? ??? ?? ?? (Status: ${res.status})`);
 
-      const newSignals = {
+      const cachedSignals = safeParseJSON('market_signals', {});
+      const fetchedSignals = {
         fearGreed: data.fearGreed?.score != null ? data.fearGreed : null,
         yieldSpread: data.yieldCurve?.spread != null ? data.yieldCurve : null,
         unemployment: data.unemployment?.rate != null ? data.unemployment : null,
+        creditSpread: data.creditSpread?.spread != null ? data.creditSpread : null,
+        cape: data.cape?.value != null ? data.cape : null,
         compositeScore: data.compositeScore,
         fetchedAt: data.fetchedAt,
+      };
+
+      const newSignals = {
+        fearGreed: pickSignalValue(fetchedSignals.fearGreed, fearGreed || cachedSignals.fearGreed || null),
+        yieldSpread: pickSignalValue(fetchedSignals.yieldSpread, yieldSpread || cachedSignals.yieldSpread || null),
+        unemployment: pickSignalValue(fetchedSignals.unemployment, unemployment || cachedSignals.unemployment || null),
+        creditSpread: pickSignalValue(fetchedSignals.creditSpread, creditSpread || cachedSignals.creditSpread || null),
+        cape: pickSignalValue(fetchedSignals.cape, capeRatio || cachedSignals.cape || null),
+        compositeScore: data.compositeScore ?? cachedSignals.compositeScore ?? null,
+        fetchedAt: data.fetchedAt || cachedSignals.fetchedAt || new Date().toISOString(),
       };
 
       setFearGreed(newSignals.fearGreed);
       setYieldSpread(newSignals.yieldSpread);
       setUnemployment(newSignals.unemployment);
+      setCreditSpread(newSignals.creditSpread);
+      setCapeRatio(newSignals.cape);
+      const missingCount = [newSignals.fearGreed, newSignals.yieldSpread, newSignals.unemployment, newSignals.creditSpread, newSignals.cape]
+        .filter((item) => !item)
+        .length;
+      setSignalMeta(buildMetricMeta({
+        source: data.degraded ? 'Composite+Fallback' : 'Composite',
+        updatedAt: newSignals.fetchedAt,
+        responseTimeMs: 0,
+        missingRatio: missingCount / 5,
+        calcMode: 'estimated',
+      }));
       localStorage.setItem('market_signals', JSON.stringify(newSignals));
+      if (data.warning) setSignalsError(data.warning);
     } catch (e) {
-      console.warn('시장 시그널 조회 실패:', e.message);
+      console.warn('?? ??? ?? ??:', e.message);
       setSignalsError(e.message);
     } finally {
       setSignalsLoading(false);
@@ -139,7 +178,7 @@ export function MarketProvider({ children }) {
     setCorrLoading(true);
     try {
       const requests = holdings.map(async (holding) => {
-        const isOverseas = ['미국주식', '해외채권', '원자재', '금'].includes(holding.cls);
+        const isOverseas = ['미국 주식', '실물자산'].includes(holding.cls);
         const res = await fetch(`/api/kis-history?ticker=${holding.code}&type=${isOverseas ? 'overseas' : 'domestic'}`);
         const data = await res.json();
         if (data.prices && data.prices.length > 10) {
@@ -206,9 +245,13 @@ export function MarketProvider({ children }) {
         fearGreed,
         yieldSpread,
         unemployment,
+        creditSpread,
+        capeRatio,
         signalsLoading,
         signalsError,
         fetchMarketSignals,
+        vixMeta,
+        signalMeta,
       }}
     >
       {children}

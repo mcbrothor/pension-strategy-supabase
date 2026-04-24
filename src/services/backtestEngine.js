@@ -105,3 +105,41 @@ export function runBacktest(historicalData, holdings, initialCapital = 1000000, 
     equityCurve
   };
 }
+
+export function buildProxyBenchmarkCurve(length, initialCapital = 1000000, annualReturn = 0.1) {
+  const curve = [{ day: 0, value: initialCapital }];
+  const dailyReturn = Math.pow(1 + annualReturn, 1 / 252) - 1;
+  let value = initialCapital;
+  for (let day = 1; day < length; day += 1) {
+    value *= 1 + dailyReturn;
+    curve.push({ day, value: Math.round(value) });
+  }
+  return curve;
+}
+
+export function calculateRollingExcessStats(strategyCurve = [], benchmarkCurve = [], windowDays = 252 * 3) {
+  const minLen = Math.min(strategyCurve.length, benchmarkCurve.length);
+  if (minLen <= windowDays) {
+    return { positiveRatio: null, excessSeries: [] };
+  }
+
+  const excessSeries = [];
+  let positiveCount = 0;
+  for (let i = windowDays; i < minLen; i += 1) {
+    const stratStart = strategyCurve[i - windowDays]?.value;
+    const stratEnd = strategyCurve[i]?.value;
+    const benchStart = benchmarkCurve[i - windowDays]?.value;
+    const benchEnd = benchmarkCurve[i]?.value;
+    if (!stratStart || !stratEnd || !benchStart || !benchEnd) continue;
+    const stratReturn = ((stratEnd / stratStart) - 1) * 100;
+    const benchReturn = ((benchEnd / benchStart) - 1) * 100;
+    const excess = stratReturn - benchReturn;
+    if (excess > 0) positiveCount += 1;
+    excessSeries.push({ day: i, excess: Math.round(excess * 100) / 100 });
+  }
+
+  return {
+    positiveRatio: excessSeries.length > 0 ? positiveCount / excessSeries.length : null,
+    excessSeries,
+  };
+}

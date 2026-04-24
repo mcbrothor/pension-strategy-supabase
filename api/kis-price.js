@@ -1,20 +1,35 @@
 import * as cheerio from 'cheerio';
+import { getCachedTokenFromDB, saveTokenToDB } from './_lib/token-storage.js';
 
 const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real" 
   ? "https://openapi.koreainvestment.com:9443" 
   : "https://openapivts.koreainvestment.com:29443";
 
+// 서버리스 함수 인스턴스 내 메모리 캐싱 (글로벌 변수)
 let cachedToken = null;
 let tokenExpiry = 0;
 let tokenPromise = null;
 
 async function getAccessToken() {
   const now = Date.now();
+  
+  // 1. 메모리 캐시 확인 (인스턴스가 살아있는 동안 가장 빠름)
   if (cachedToken && now < tokenExpiry) return cachedToken;
   if (tokenPromise) return tokenPromise;
   
   tokenPromise = (async () => {
     try {
+      // 2. DB(Supabase) 캐시 확인 (인스턴스 교체/콜드 스타트 시 대응)
+      const dbResult = await getCachedTokenFromDB('kis');
+      if (dbResult) {
+        cachedToken = dbResult.token;
+        tokenExpiry = dbResult.expiry;
+        console.log("[KIS] Token loaded from DB cache.");
+        return cachedToken;
+      }
+
+      // 3. DB에도 없거나 만료된 경우 신규 발급
+      console.log("[KIS] Requesting new token from KIS API...");
       const res = await fetch(`${API_BASE_URL}/oauth2/tokenP`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -25,10 +40,15 @@ async function getAccessToken() {
         })
       });
       const data = await res.json();
+      
       if (data.access_token) {
         cachedToken = data.access_token;
+        // KIS 만료 시간 대비 전파 지연 등을 고려해 60초 일찍 만료 처리
         tokenExpiry = now + (data.expires_in - 60) * 1000;
-        console.log("KIS Token Refreshed. Next expiry:", new Date(tokenExpiry).toLocaleString());
+        
+        // 4. DB에 업데이트하여 다른 인스턴스들과 공유
+        await saveTokenToDB('kis', data.access_token, data.expires_in);
+        
         return cachedToken;
       } else {
         console.error("KIS Token Error:", data.error_description || "Unknown error");

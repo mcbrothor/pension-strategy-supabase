@@ -4,12 +4,14 @@ import { STRATEGIES, ASSET_COLORS } from "../../constants/index.js";
 import { irpLimit } from "../../utils/helpers.js";
 import { fmtR } from "../../utils/formatters.js";
 import { usePortfolio } from "../../context/PortfolioContext.jsx";
+import { useMarket } from "../../context/MarketContext.jsx";
 import {
   applyPolicyToTargetWeights,
   calculateGlidePathMinimum,
   compositionToWeights,
   optimizeAssetLocation,
 } from "../../services/portfolioPlanningEngine.js";
+import { applyAdaptiveOverlay, applyVolTargetOverlay } from "../../services/overlayEngine.js";
 
 function fmtWeight(value) {
   const num = Number(value);
@@ -35,6 +37,9 @@ function MomentumCalculationPanel({ detail, rawTargets, finalTargets, calcText, 
   const finalRows = visibleWeights(finalTargets || {});
   const policy = detail?.policy || {};
   const baseCashPct = Number(policy.baseCashPct) || 0;
+  const overlaySummary = detail?.overlaySummary;
+  const targetEquity = Number(detail?.targetEquity);
+  const volScale = Number(detail?.volScale ?? 1);
 
   return (
     <div data-testid="momentum-calculation-detail" style={{ background: "var(--bg-main)", border: "1.5px solid #ba7517", borderRadius: 10, padding: "1rem", marginBottom: "1.25rem", position: "relative" }}>
@@ -44,6 +49,8 @@ function MomentumCalculationPanel({ detail, rawTargets, finalTargets, calcText, 
         <Badge c="#633806" bg="#faeeda">계산 출처: {sourceText(detail?.source)}</Badge>
         <Badge c="#0c447c" bg="#e6f1fb">평시 현금 {fmtWeight(baseCashPct)}</Badge>
         {glideMinSafePct > 0 && <Badge c="#633806" bg="#faeeda">안전자산 하한 {fmtWeight(glideMinSafePct)}</Badge>}
+        {Number.isFinite(targetEquity) && <Badge c="#27500a" bg="#eaf3de">목표 위험자산 {fmtWeight(targetEquity)}</Badge>}
+        {Number.isFinite(volScale) && <Badge c="#633806" bg="#faeeda">Vol Scale {volScale.toFixed(2)}x</Badge>}
       </div>
 
       {calcLoading && (
@@ -53,6 +60,18 @@ function MomentumCalculationPanel({ detail, rawTargets, finalTargets, calcText, 
       <div style={{ fontSize: 12, color: "var(--text-main)", lineHeight: 1.7, marginBottom: 10 }}>
         {detail?.summary || "선택한 동적 전략의 원천 신호와 최종 비중 계산 과정을 표시합니다."}
       </div>
+
+      {overlaySummary && (
+        <div style={{ background: "var(--bg-card)", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-main)", marginBottom: 6 }}>오버레이 상태</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+            CAPE {overlaySummary.cape ?? "N/A"} / HY Spread {overlaySummary.creditSpread ?? "N/A"} / 10Y-2Y {overlaySummary.yieldSpread ?? "N/A"} / VIX {overlaySummary.vix ?? "N/A"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+            Valuation Shift {overlaySummary.valuationShift ?? 0}%p / Macro Shift {overlaySummary.macroShift ?? 0}%p
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, marginBottom: 12 }}>
         <div style={{ background: "var(--bg-card)", borderRadius: 8, padding: 10 }}>
@@ -125,6 +144,7 @@ function MomentumCalculationPanel({ detail, rawTargets, finalTargets, calcText, 
 
 export default function StrategySelect({ accountType, onStrategyApply }) {
   const { fetchMomentumTargets, portfolio, updateAllocationPolicy } = usePortfolio();
+  const { vix, yieldSpread, creditSpread, capeRatio } = useMarket();
   const [acc, setAcc] = useState(accountType || "연금저축");
   const [filt, setFilt] = useState("all");
   const [sel, setSel] = useState(null);
@@ -161,12 +181,21 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
       return applyPolicyToTargetWeights(precalcRawTargets, allocationPolicy, retirementPlan);
     }
     if (precalcTargets) return precalcTargets;
+
+    const baseWeights = compositionToWeights(selS.composition);
+    const adaptive = applyAdaptiveOverlay(baseWeights, selS, {
+      cape: capeRatio,
+      creditSpread,
+      yieldSpread: yieldSpread?.spread,
+      vix,
+    });
+    const volAdjusted = applyVolTargetOverlay(adaptive.targets, Number(portfolio?.riskSnapshot?.vol) || null, 12);
     return applyPolicyToTargetWeights(
-      compositionToWeights(selS.composition),
+      volAdjusted.targets,
       allocationPolicy,
       retirementPlan
     );
-  }, [selS, precalcTargets, precalcRawTargets, allocationPolicy, retirementPlan]);
+  }, [selS, precalcTargets, precalcRawTargets, allocationPolicy, retirementPlan, capeRatio, creditSpread, yieldSpread, vix, portfolio?.riskSnapshot?.vol]);
   const assetLocation = React.useMemo(
     () => optimizeAssetLocation(
       Object.entries(selectedTargets).map(([cls, target]) => ({ cls, target })),
@@ -209,7 +238,7 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
             style={{ width: "100%" }}
           />
           <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
-            모든 정적/동적 전략의 원래 비중을 남은 투자금 안에서 축소하고, 차액을 현금MMF로 배정합니다.
+            모든 정적/동적 전략의 원래 비중을 남은 투자금 안에서 축소하고, 차액을 현금으로 배정합니다.
           </div>
         </div>
       </Card>
@@ -263,6 +292,7 @@ export default function StrategySelect({ accountType, onStrategyApply }) {
                 <Badge c={s.type === "fixed" ? "#27500a" : "#633806"} bg={s.type === "fixed" ? "#eaf3de" : "#faeeda"}>{s.type === "fixed" ? "실행가능" : "자동 계산"}</Badge>
                 <Badge c={lvC[s.level]} bg={lvB[s.level]}>{s.level}</Badge>
                 <Badge c={irp.c} bg={irp.bg}>{irp.lbl}</Badge>
+                <Badge c="#0c447c" bg="#e6f1fb">Overlay {Object.values(s.overlays || {}).filter(Boolean).length}개</Badge>
                 {hasTarget && (
                   <Badge c={meetsTarget ? "#27500a" : "#791f1f"} bg={meetsTarget ? "#eaf3de" : "#fcebeb"}>
                     {meetsTarget ? "⭐ 추천" : "⚠️ 목표 수익률 미달"}

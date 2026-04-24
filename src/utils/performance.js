@@ -53,6 +53,7 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
   const costTotal = Number(portfolio?.principalTotal) > 0 ? Number(portfolio.principalTotal) : holdingsCostTotal;
   const unrealizedPnl = costTotal > 0 ? total - costTotal : null;
   const unrealizedReturn = safePercentFromAmounts(total, costTotal, { maxAbsPct: 1000 });
+  const txSummary = summarizeTransactionPerformance(portfolio?.transactions || [], holdings || []);
 
   const datedHistory = (portfolio.history || [])
     .map(item => ({
@@ -80,11 +81,20 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
   const benchmarkGap = periodReturn != null && benchmarkPeriodReturn != null
     ? periodReturn - benchmarkPeriodReturn
     : null;
+  const rolling1yStart = datedHistory.find((item) => item.parsedDate && (now - item.parsedDate) / 86400000 >= 365);
+  const rolling3yStart = datedHistory.find((item) => item.parsedDate && (now - item.parsedDate) / 86400000 >= 365 * 3);
+  const rolling1yReturn = rolling1yStart ? safePercentFromAmounts(total, rolling1yStart.total) : null;
+  const rolling3yReturn = rolling3yStart ? safePercentFromAmounts(total, rolling3yStart.total) : null;
+  const rolling1yBenchmark = rolling1yReturn != null ? ((Math.pow(1 + annualExpRet, 1) - 1) * 100) : null;
+  const rolling3yBenchmark = rolling3yReturn != null ? ((Math.pow(1 + annualExpRet, 3) - 1) * 100) : null;
 
   return {
     costTotal,
-    unrealizedPnl,
+    unrealizedPnl: txSummary.unrealizedPnl || unrealizedPnl,
     unrealizedReturn,
+    realizedPnl: txSummary.realizedPnl,
+    totalFees: txSummary.totalFees,
+    contributionByAssetClass: txSummary.contributionByAssetClass,
     firstDate: first?.date || null,
     firstTotal,
     periodDays,
@@ -92,6 +102,12 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
     annualizedReturn,
     benchmarkPeriodReturn,
     benchmarkGap,
+    benchmarkGap1Y: rolling1yReturn != null && rolling1yBenchmark != null ? rolling1yReturn - rolling1yBenchmark : null,
+    benchmarkGap3Y: rolling3yReturn != null && rolling3yBenchmark != null ? rolling3yReturn - rolling3yBenchmark : null,
+    rolling1yReturn,
+    rolling3yReturn,
+    rolling1yBenchmark,
+    rolling3yBenchmark,
     hasHistory: Boolean(firstTotal && periodReturn != null),
     hasReturnAnomaly: datedHistory.length > 0 && validHistory[0] !== datedHistory[0],
     returnAnomalyNote:
@@ -100,3 +116,4 @@ export function buildPerformanceSummary(portfolio, holdings, total, annualExpRet
         : null,
   };
 }
+import { summarizeTransactionPerformance } from "../services/transactionEngine.js";

@@ -87,13 +87,13 @@ export function computeGTAA5Decision(priceSeries, composition) {
     });
   }
 
-  const cashCls = composition.find(c => c.cls === "현금MMF")?.cls || "현금MMF";
+  const cashCls = composition.find(c => c.cls === "현금")?.cls || "현금";
   targets[cashCls] = (targets[cashCls] || 0) + Math.max(0, 100 - allocated);
 
   const detail = baseDetail(
     "gtaa5",
     "GTAA 5 모멘텀 계산",
-    "5개 위험자산의 최근 월말 종가가 각 자산의 10개월 이동평균 위에 있으면 편입하고, 탈락한 비중은 현금MMF로 대기합니다.",
+    "5개 위험자산의 최근 월말 종가가 각 자산의 10개월 이동평균 위에 있으면 편입하고, 탈락한 비중은 현금으로 대기합니다.",
     [
       "For each asset i:",
       "SMA10_i = average(last 10 monthly closes)",
@@ -105,7 +105,7 @@ export function computeGTAA5Decision(priceSeries, composition) {
   detail.steps = [
     "각 후보 자산의 최근 월말 종가와 10개월 이동평균을 계산합니다.",
     "종가가 10개월 이동평균 이상인 자산만 원래 전략 비중으로 편입합니다.",
-    `편입 비중 합계 ${rounded(allocated, 1)}%, 나머지 ${rounded(targets[cashCls], 1)}%는 현금MMF로 배정합니다.`,
+    `편입 비중 합계 ${rounded(allocated, 1)}%, 나머지 ${rounded(targets[cashCls], 1)}%는 현금으로 배정합니다.`,
   ];
   detail.rows = rows;
   detail.rawTargets = cleanTargets(targets);
@@ -120,7 +120,7 @@ export function computeDualMomentumDecision(priceSeries, composition) {
   const indicator = composition.find(c => c.role === "indicator");
   const relTargets = composition.filter(c => c.role === "relative_target");
   const defensive = composition.find(c => c.role === "defensive");
-  const cashCls = "현금MMF";
+  const cashCls = "현금";
 
   const usRet = retPctFromCloses(priceSeries[indicator?.cls]?.monthlyCloses || [], 12);
   const cashRet = retPctFromCloses(priceSeries[cashCls]?.monthlyCloses || [], 12);
@@ -129,10 +129,10 @@ export function computeDualMomentumDecision(priceSeries, composition) {
   composition.forEach(c => targets[c.cls] = 0);
   const rows = [
     {
-      assetClass: indicator?.cls || "미국주식",
+      assetClass: indicator?.cls || "미국 주식",
       role: "절대/상대 모멘텀 기준",
       signal: "12개월 수익률",
-      rule: "미국주식 12개월 수익률 > 현금MMF 12개월 수익률",
+      rule: "미국 주식 12개월 수익률 > 현금 12개월 수익률",
       value: `${fmtPct(usRet)} vs ${fmtPct(cashRet)}`,
       result: usRet != null && cashRet != null && usRet > cashRet ? "Risk-On 통과" : "Risk-Off",
       passed: usRet != null && cashRet != null && usRet > cashRet,
@@ -146,16 +146,16 @@ export function computeDualMomentumDecision(priceSeries, composition) {
     const detail = baseDetail(
       "dual_momentum",
       "듀얼 모멘텀 계산",
-      "먼저 미국주식의 12개월 절대 모멘텀이 현금MMF보다 좋은지 확인하고, 통과하지 못하면 방어자산으로 이동합니다.",
+      "먼저 미국 주식의 12개월 절대 모멘텀이 현금보다 좋은지 확인하고, 통과하지 못하면 방어자산으로 이동합니다.",
       [
-        "absolute = return_12m(미국주식) > return_12m(현금MMF)",
+        "absolute = return_12m(미국 주식) > return_12m(현금)",
         "if absolute is false: target_defensive = 100%",
-        "if absolute is true: choose max(return_12m(미국주식), return_12m(상대후보))",
+        "if absolute is true: choose max(return_12m(미국 주식), return_12m(상대후보))",
       ].join("\n"),
       "월봉 종가 12개월 수익률 기준"
     );
     detail.steps = [
-      `미국주식 12개월 수익률 ${fmtPct(usRet)}와 현금MMF ${fmtPct(cashRet)}를 비교했습니다.`,
+      `미국 주식 12개월 수익률 ${fmtPct(usRet)}와 현금 ${fmtPct(cashRet)}를 비교했습니다.`,
       `절대 모멘텀 미통과로 ${defensive?.cls || cashCls} 100%를 선택했습니다.`,
     ];
     detail.rows = rows;
@@ -188,9 +188,9 @@ export function computeDualMomentumDecision(priceSeries, composition) {
   const detail = baseDetail(
     "dual_momentum",
     "듀얼 모멘텀 계산",
-    "절대 모멘텀 통과 후 미국주식과 상대 후보의 12개월 수익률을 비교해 가장 강한 자산에 100% 배정합니다.",
+    "절대 모멘텀 통과 후 미국 주식과 상대 후보의 12개월 수익률을 비교해 가장 강한 자산에 100% 배정합니다.",
     [
-      "absolute = return_12m(미국주식) > return_12m(현금MMF)",
+      "absolute = return_12m(미국 주식) > return_12m(현금)",
       "if absolute is true:",
       "winner = argmax(return_12m(미국주식), return_12m(상대후보들))",
       "target_winner = 100%",
@@ -198,7 +198,7 @@ export function computeDualMomentumDecision(priceSeries, composition) {
     "월봉 종가 12개월 수익률 기준"
   );
   detail.steps = [
-    `절대 모멘텀 통과: 미국주식 ${fmtPct(usRet)} > 현금MMF ${fmtPct(cashRet)}.`,
+    `절대 모멘텀 통과: 미국 주식 ${fmtPct(usRet)} > 현금 ${fmtPct(cashRet)}.`,
     `상대 모멘텀 최고 자산은 ${bestCls} (${fmtPct(bestRet)})입니다.`,
     `${bestCls}에 100%를 배정했습니다.`,
   ];
@@ -221,7 +221,7 @@ export function computeLAADecision(priceSeries, dailyCloses, unempData, composit
   fixed.forEach(c => targets[c.cls] = c.w || 0);
 
   const momentumWeight = 25;
-  const indicatorCls = "미국주식";
+  const indicatorCls = "미국 주식";
 
   let dualConditionResult = null; 
   let conditionSource = "fallback";
@@ -256,14 +256,14 @@ export function computeLAADecision(priceSeries, dailyCloses, unempData, composit
     const ret = retPctFromCloses(priceSeries[indicatorCls]?.monthlyCloses || [], 12);
     dualConditionResult = ret != null && ret >= 0;
     conditionSource = "12m_momentum";
-    conditionText = "미국주식 12개월 수익률 >= 0";
+    conditionText = "미국 주식 12개월 수익률 >= 0";
     conditionValue = fmtPct(ret);
   }
 
   if (dualConditionResult) {
     if (attack) targets[attack.cls] = (targets[attack.cls] || 0) + momentumWeight;
   } else {
-    const safeCls = defensive?.cls || "현금MMF";
+    const safeCls = defensive?.cls || "현금";
     targets[safeCls] = (targets[safeCls] || 0) + momentumWeight;
   }
 
@@ -272,20 +272,20 @@ export function computeLAADecision(priceSeries, dailyCloses, unempData, composit
   const detail = baseDetail(
     "laa",
     "LAA 계산",
-    "국내주식, 금, 미국중기채권은 각 25% 고정하고, 남은 25% 공격 슬리브를 미국주식 또는 현금MMF에 배정합니다.",
+    "국내 주식, 실물자산, 장기채는 각 25% 고정하고, 남은 25% 공격 슬리브를 미국 주식 또는 현금에 배정합니다.",
     [
-      "fixed = 국내주식 25% + 금 25% + 미국중기채권 25%",
+      "fixed = 국내 주식 25% + 실물자산 25% + 장기채 25%",
       "risk_on = SPY close > SMA200 AND unemployment < unemployment_12m_avg",
       "fallback: if macro data missing, use SPY 12m return >= 0",
-      "if risk_on: 미국주식 += 25%",
-      "else: 현금MMF += 25%",
+      "if risk_on: 미국 주식 += 25%",
+      "else: 현금 += 25%",
     ].join("\n"),
     conditionSource === "dual" ? "SPY 일봉 200일선 + FRED 실업률" : conditionSource === "200dma_only" ? "SPY 일봉 200일선" : "월봉 12개월 수익률 폴백"
   );
   detail.steps = [
     "고정 슬리브 75%를 먼저 배정했습니다.",
     `${conditionText} 조건을 평가했습니다.`,
-    `${dualConditionResult ? "Risk-On" : "Risk-Off"} 판정으로 ${dualConditionResult ? attack?.cls : defensive?.cls || "현금MMF"}에 공격 슬리브 25%를 배정했습니다.`,
+    `${dualConditionResult ? "Risk-On" : "Risk-Off"} 판정으로 ${dualConditionResult ? attack?.cls : defensive?.cls || "현금"}에 공격 슬리브 25%를 배정했습니다.`,
   ];
   detail.rows = [
     ...fixed.map(c => ({
@@ -298,12 +298,12 @@ export function computeLAADecision(priceSeries, dailyCloses, unempData, composit
       passed: true,
     })),
     {
-      assetClass: attack?.cls || "미국주식",
+      assetClass: attack?.cls || "미국 주식",
       role: "공격 슬리브 판정",
       signal: conditionText,
       rule: "Risk-On이면 공격자산, 아니면 방어자산",
       value: conditionValue,
-      result: dualConditionResult ? `${attack?.cls || "미국주식"} 25%` : `${defensive?.cls || "현금MMF"} 25%`,
+      result: dualConditionResult ? `${attack?.cls || "미국 주식"} 25%` : `${defensive?.cls || "현금"} 25%`,
       passed: dualConditionResult,
     },
   ];

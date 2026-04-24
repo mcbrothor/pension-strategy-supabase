@@ -3,9 +3,14 @@ export const CASH_ASSET_CLASS = "현금MMF";
 export const DEFAULT_RETIREMENT_PLAN = {
   currentAge: 40,
   retirementAge: 60,
+  withdrawalStartAge: 55,
   lifeExpectancy: 90,
   currentBalance: 0,
   monthlyContribution: 500000,
+  annualContribution: 6000000,
+  taxCreditLimit: 6000000,
+  taxCreditRate: 0.165,
+  taxCreditUsed: 0,
   monthlyNeed: 3000000,
   monthlyPension: 1000000,
   inflationPct: 2,
@@ -259,9 +264,13 @@ export function calculateRetirementTarget(plan = {}) {
   };
   const currentAge = toNumber(merged.currentAge, DEFAULT_RETIREMENT_PLAN.currentAge);
   const retirementAge = Math.max(currentAge + 1, toNumber(merged.retirementAge, DEFAULT_RETIREMENT_PLAN.retirementAge));
+  const withdrawalStartAge = Math.max(55, toNumber(merged.withdrawalStartAge, DEFAULT_RETIREMENT_PLAN.withdrawalStartAge));
   const lifeExpectancy = Math.max(retirementAge + 1, toNumber(merged.lifeExpectancy, DEFAULT_RETIREMENT_PLAN.lifeExpectancy));
   const yearsToRetirement = Math.max(retirementAge - currentAge, 1);
   const retirementYears = Math.max(lifeExpectancy - retirementAge, 1);
+  const annualContribution = Math.max(0, toNumber(merged.annualContribution || toNumber(merged.monthlyContribution) * 12));
+  const taxCreditLimit = Math.max(0, toNumber(merged.taxCreditLimit, DEFAULT_RETIREMENT_PLAN.taxCreditLimit));
+  const taxCreditRate = Math.max(0, toNumber(merged.taxCreditRate, DEFAULT_RETIREMENT_PLAN.taxCreditRate));
   const inflationRate = toNumber(merged.inflationPct, 0) / 100;
   const withdrawalRate = toNumber(merged.withdrawalReturnPct, 0) / 100 / 12;
   const futureMonthlyNeed = Math.max(0, toNumber(merged.monthlyNeed)) * Math.pow(1 + inflationRate, yearsToRetirement);
@@ -279,14 +288,26 @@ export function calculateRetirementTarget(plan = {}) {
     targetCorpus,
     years: yearsToRetirement,
   });
+  const taxCreditUsed = Math.min(annualContribution, taxCreditLimit);
+  const taxCreditAmount = taxCreditUsed * taxCreditRate;
+  const withdrawalEligible = currentAge >= withdrawalStartAge;
+  const earlyWithdrawalPenaltyRisk = currentAge < 55;
 
   return {
     ...merged,
     currentAge,
     retirementAge,
+    withdrawalStartAge,
     lifeExpectancy,
     yearsToRetirement,
     retirementYears,
+    annualContribution: Math.round(annualContribution),
+    taxCreditLimit: Math.round(taxCreditLimit),
+    taxCreditRate,
+    taxCreditUsed: Math.round(taxCreditUsed),
+    taxCreditAmount: Math.round(taxCreditAmount),
+    withdrawalEligible,
+    earlyWithdrawalPenaltyRisk,
     futureMonthlyNeed: Math.round(futureMonthlyNeed),
     netMonthlyNeed: Math.round(netMonthlyNeed),
     targetCorpus: Math.round(targetCorpus),

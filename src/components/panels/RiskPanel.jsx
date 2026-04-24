@@ -242,7 +242,7 @@ export default function RiskPanel({ portfolio }) {
     inputs: [
       `현재 보유자산 합계: ${fmt(total)}`,
       "같은 자산군 종목은 한 줄로 합산",
-      "현금MMF도 비중에는 포함하되 변동성은 1%로 낮게 반영",
+      "현금도 비중에는 포함하되 변동성은 1%로 낮게 반영",
       `${riskModeText} 지표와 같은 현재 보유금액 비중 사용`,
     ],
   };

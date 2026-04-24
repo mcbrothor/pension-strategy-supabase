@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import EntryPanel from "./EntryPanel.jsx";
 import AuthSetup from "../common/AuthSetup.jsx";
 import RetirementRoadmap from "./RetirementRoadmap.jsx";
 import AlertsPanel from "./AlertsPanel.jsx";
@@ -10,7 +9,6 @@ import { Btn } from "../common/index.jsx";
  * 서브탭으로 구분하여 한 화면에서 모든 설정을 관리합니다.
  */
 const SUB_TABS = [
-  { id: "assets", label: "자산 관리", icon: "📊" },
   { id: "alerts", label: "알림 설정", icon: "🔔" },
   { id: "roadmap", label: "은퇴 로드맵", icon: "🗺️" },
   { id: "account", label: "계정", icon: "👤" },
@@ -18,9 +16,9 @@ const SUB_TABS = [
 
 export default function SettingsPanel({
   portfolio, setPortfolio, saveHoldings, savePrincipalTotal, saveEvaluationAmount, restorePreviousPortfolio, restoreInfo, syncStatus, krEtfs, tickerMap, masterError,
-  user, login, signUp, logout, isSaving, onRefreshPrices, initialSubTab, onSubTabHandled
+  user, login, signUp, logout, isSaving, onRefreshPrices, onNotifyEmailChange, initialSubTab, onSubTabHandled
 }) {
-  const [subTab, setSubTab] = useState("assets");
+  const [subTab, setSubTab] = useState("alerts");
 
   React.useEffect(() => {
     if (initialSubTab) {
@@ -47,36 +45,12 @@ export default function SettingsPanel({
       </div>
 
       {/* 콘텐츠 */}
-      {subTab === "assets" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <EntryPanel
-            portfolio={portfolio}
-            onSave={saveHoldings}
-            onPrincipalTotalChange={savePrincipalTotal}
-            onEvaluationAmountChange={saveEvaluationAmount}
-            onRestorePrevious={restorePreviousPortfolio}
-            onRefreshPrices={onRefreshPrices}
-            restoreInfo={restoreInfo}
-            syncStatus={syncStatus}
-            onRowsChange={(nextRows) =>
-              setPortfolio((prev) => ({
-                ...prev,
-                holdings: nextRows,
-                total: nextRows.reduce((sum, item) => sum + (Number(item.amt) || 0), 0),
-              }))
-            }
-            krEtfs={krEtfs}
-            tickerMap={tickerMap}
-            masterError={masterError}
-          />
-        </div>
-      )}
-
       {subTab === "alerts" && (
         <AlertsPanel
           portfolio={portfolio}
           onStopLossChange={v => setPortfolio(p => ({ ...p, stopLoss: v }))}
           onMddChange={v => setPortfolio(p => ({ ...p, mddLimit: v }))}
+          onNotifyEmailChange={onNotifyEmailChange}
         />
       )}
 

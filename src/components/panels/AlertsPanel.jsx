@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { Card, ST, Btn, ReasonBox } from "../common/index.jsx";
 import { fmt } from "../../utils/formatters";
 
-export default function AlertsPanel({ portfolio, onStopLossChange, onMddChange }) {
+export default function AlertsPanel({ portfolio, onStopLossChange, onMddChange, onNotifyEmailChange }) {
   const [slVal, setSlVal] = useState(portfolio.stopLoss || -20);
   const [mddVal, setMddVal] = useState(portfolio.mddLimit || -15);
+  const [emailVal, setEmailVal] = useState(portfolio.notifyEmail || "");
   const total = portfolio.total || 0;
 
   const alerts = [];
@@ -64,6 +65,23 @@ export default function AlertsPanel({ portfolio, onStopLossChange, onMddChange }
           </div>
         </Card>
       </div>
+
+      <Card>
+        <ST>리밸런싱 알림 이메일</ST>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 10, lineHeight: 1.6 }}>
+          주문계획 완료 후 알림을 받을 이메일을 입력하세요. 로그인 계정 이메일이 자동 사용됩니다. 다른 주소로 받으려면 아래에 입력하세요.
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            type="email"
+            value={emailVal}
+            placeholder="example@email.com (빈칸 = 로그인 계정 이메일 사용)"
+            onChange={e => setEmailVal(e.target.value)}
+            style={{ flex: 1, minWidth: 220, padding: "7px 12px", border: "0.5px solid var(--border-glass)", borderRadius: "var(--radius-md)", fontSize: 13, background: "var(--bg-card)", color: "var(--text-main)", fontFamily: "var(--font-sans)" }}
+          />
+          <Btn sm onClick={() => onNotifyEmailChange && onNotifyEmailChange(emailVal)}>저장</Btn>
+        </div>
+      </Card>
     </div>
   );
 }

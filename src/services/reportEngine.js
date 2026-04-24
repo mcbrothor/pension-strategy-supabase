@@ -43,25 +43,85 @@ function holdingLabel(holding = {}) {
   return code ? `${name} (${code})` : name;
 }
 
+const TAG_COLORS = {
+  "[미국 주식]": "#185fa5",
+  "[국내 주식]": "#3b6d11",
+  "[채권]": "#ba7517",
+  "[실물자산]": "#639922",
+  "[현금]": "#888780",
+};
+
 export function buildAssetClassTag(holding = {}) {
   const cls = String(holding.cls || holding.assetClass || '');
   const name = `${holding.etf || ''} ${holding.name || ''}`;
   const text = `${cls} ${name}`;
 
-  if (/현금|MMF|CASH/i.test(text)) return '[안전자산-현금/MMF]';
-  if (/단기채|국고채|국내채권|중기채|장기채|글로벌채권|채권|bond/i.test(text)) return '[안전자산-채권]';
-  if (/금|gold/i.test(text)) return '[대체자산-금]';
-  if (/리츠|reit/i.test(text)) return '[대체자산-리츠]';
-  if (/원자재|commodity/i.test(text)) return '[대체자산-원자재]';
+  if (/현금|MMF|CASH/i.test(text)) return '[현금]';
+  if (/단기채|국고채|국내채권|중기채|장기채|글로벌채권|채권|bond/i.test(text)) return '[채권]';
   if (/미국주식|S&P|나스닥|미국/i.test(text)) return '[미국 주식]';
   if (/국내주식|코스피|코스닥|KRX/i.test(text)) return '[국내 주식]';
-  if (/선진국/i.test(text)) return '[선진국 주식]';
-  if (/신흥국/i.test(text)) return '[신흥국 주식]';
+  if (/금|gold|원자재|commodity|리츠|reit|실물/i.test(text)) return '[실물자산]';
   return `[${cls || '기타 자산'}]`;
 }
 
+export function generateDonutSVG(weights, size = 160) {
+  const entries = Object.entries(weights)
+    .filter(([, w]) => w > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  if (total <= 0) return "";
+
+  const radius = 60;
+  const strokeWidth = 14;
+  const center = size / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  let accumulatedAngle = 0;
+  let circles = "";
+  let legend = '<div style="flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-left:30px;">';
+
+  entries.forEach(([tag, w]) => {
+    const ratio = w / total;
+    const strokeDasharray = `${circumference * ratio} ${circumference}`;
+    const rotation = (accumulatedAngle / total) * 360 - 90;
+    accumulatedAngle += w;
+    const color = TAG_COLORS[tag] || "#ccc";
+
+    circles += `<circle cx="${center}" cy="${center}" r="${radius}" fill="transparent" stroke="${color}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDasharray}" transform="rotate(${rotation} ${center} ${center})" />`;
+    
+    legend += `<div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#444;">
+      <div style="width:8px; height:8px; border-radius:50%; background:${color}"></div>
+      <span style="font-weight:700">${tag}</span>
+      <span style="color:#888">${w.toFixed(1)}%</span>
+    </div>`;
+  });
+  legend += '</div>';
+
+  return `
+    <div style="display:flex; align-items:center; margin-bottom:25px; background:#f9f9f9; padding:20px; border-radius:12px; border:1px solid #eee;">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        ${circles}
+        <text x="50%" y="54%" text-anchor="middle" style="font-size:16px; font-weight:800; fill:#333; font-family:sans-serif;">${Math.round(total)}%</text>
+      </svg>
+      ${legend}
+    </div>
+  `;
+}
+
+const ASSET_PRIORITY = {
+  '[미국 주식]': 1,
+  '[국내 주식]': 2,
+  '[채권]': 3,
+  '[실물자산]': 4,
+  '[현금]': 5,
+};
+
+function getAssetPriority(tag) {
+  return ASSET_PRIORITY[tag] || 99;
+}
+
 export function buildLlmReadyHoldings(holdings = [], total = 0) {
-  return holdings.map((holding) => {
+  const mapped = holdings.map((holding) => {
     const amount = Number(holding.amt) || 0;
     const target = Number(holding.target) || 0;
     const cur = total > 0 ? Math.round((amount / total) * 1000) / 10 : Number(holding.cur) || 0;
@@ -77,6 +137,15 @@ export function buildLlmReadyHoldings(holdings = [], total = 0) {
       diff: Math.round((cur - target) * 10) / 10,
       pnlPct,
     };
+  });
+
+  // 사용가 요청 우선순위에 따라 정렬: 미국주식 > 국내주식 > 채권 > 실물자산 > 현금
+  return mapped.sort((a, b) => {
+    const pA = getAssetPriority(a.assetClassTag);
+    const pB = getAssetPriority(b.assetClassTag);
+    if (pA !== pB) return pA - pB;
+    // 같은 자산군 내에서는 자산명 정렬
+    return a.displayName.localeCompare(b.displayName);
   });
 }
 
@@ -151,8 +220,8 @@ export function generateRebalanceInstruction(holdings = [], total = 0) {
 
 export function buildBenchmarkPerformance(strategy, periodDays) {
   if (!periodDays) return { name: '벤치마크', annualReturn: null, periodReturn: null };
-  const strategyId = strategy?.id || '';
-  const useBalanced = ['60_40', 'permanent', 'permanent_global', 'allseason', 'allweather'].includes(strategyId);
+  const benchmarkId = strategy?.benchmark || strategy?.id || '';
+  const useBalanced = benchmarkId === 'balanced_60_40';
   const annualReturn = useBalanced ? 0.075 : 0.1;
   return {
     name: useBalanced ? '60/40 혼합 지수' : 'S&P 500 지수',
@@ -215,6 +284,7 @@ export function buildReportModel({ portfolio, vix, now = new Date() }) {
   return {
     strategy,
     displayStrategyName: strategyReview.displayName || strategy?.name,
+    accountType: portfolio.accountType,
     strategyReview,
     total,
     holdings,
@@ -222,6 +292,8 @@ export function buildReportModel({ portfolio, vix, now = new Date() }) {
     metrics,
     riskLevel,
     performance,
+    contributionByAssetClass: performance.contributionByAssetClass || {},
+    strategyOverlay: portfolio.strategyOverlay || null,
     benchmark,
     alpha,
     rebalanceInstruction,
@@ -319,168 +391,241 @@ export function generateReportHTML({ portfolio, vix, vixSource, vixUpdatedAt, vi
   const z = getZone(vix);
   const managerInsight = generateInsight({ vol, riskLevel, vix, holdings });
 
+  const tagWeights = holdings.reduce((acc, h) => {
+    const tag = buildAssetClassTag(h);
+    acc[tag] = (acc[tag] || 0) + (Number(h.cur) || 0);
+    return acc;
+  }, {});
+
+  const chartHTML = generateDonutSVG(tagWeights);
+
   // 결측 경고 수집
   const warnings = [];
   if (vixError) warnings.push(`VIX 데이터 오류: ${vixError} (캐시 데이터 사용 중)`);
   if (dataMeta?.confidenceGrade === 'C') warnings.push(`데이터 신뢰등급 C — 갱신 지연 또는 결측 가능성 있음`);
   if (metrics.calcMode === 'estimated') warnings.push(`리스크 지표는 추정치 기반입니다 (2단계에서 실현 데이터 교체 예정)`);
 
-  const holdingsHTML = holdings.map(h => {
-    const diff = (h.cur || 0) - (h.target || 0);
-    const pnl = h.costAmt > 0 ? ((h.amt - h.costAmt) / h.costAmt * 100).toFixed(1) : "-";
-    return `<tr>
-      <td>${h.etf}</td><td>${h.cur}%</td><td>${h.target}%</td>
-      <td style="color:${Math.abs(diff) >= 5 ? (diff > 0 ? "#d13131" : "#185fa5") : "#333"}">${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%p</td>
-      <td>${fmt(h.amt)}원</td>
-      <td style="color:${pnl !== "-" && parseFloat(pnl) < 0 ? "#d13131" : "#28a745"}">${pnl !== "-" ? (pnl >= 0 ? "+" : "") + pnl + "%" : "-"}</td>
-    </tr>`;
-  }).join("");
-
   const warningsHTML = warnings.length > 0 
     ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px;margin:20px 0">
-         <strong>⚠ 데이터 주의사항</strong><ul style="margin:8px 0 0;padding-left:20px">
-         ${warnings.map(w => `<li>${w}</li>`).join("")}
-         </ul></div>` 
+        <strong style="color:#856404;font-size:13px">⚠️ 주의사항</strong>
+        <ul style="margin:8px 0 0 16px;padding:0;font-size:12px;color:#856404">${warnings.map(w => `<li>${w}</li>`).join("")}</ul>
+      </div>` 
     : '';
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${month} 전문 자산관리 보고서</title>
-    <style>body{font-family:sans-serif;font-size:13px;line-height:1.7;padding:40px;max-width:800px;margin:0 auto;color:#333}
-    header{border-bottom:3px solid #185fa5;padding-bottom:15px;margin-bottom:25px}
-    h2{font-size:22px;margin:0;color:#185fa5}h3{font-size:15px;margin:25px 0 10px;border-left:4px solid #185fa5;padding-left:10px;color:#111}
-    table{width:100%;border-collapse:collapse;font-size:12px;margin:15px 0}
-    th{background:#f8f9fa;text-align:left;padding:8px;border-bottom:2px solid #dee2e6}
-    td{padding:8px;border-bottom:1px solid #eee}
-    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin:20px 0}
-    .metric-box{background:#f8f9fa;padding:12px;border-radius:8px;text-align:center}
-    .metric-val{font-size:16px;font-weight:700;color:#185fa5}
-    .insight-card{background:#eef6ff;padding:15px;border-radius:10px;border-left:5px solid #185fa5;font-style:italic}
-    .calc-note{background:#f8f9fa;border-radius:6px;padding:10px;font-size:11px;color:#666;margin:10px 0}
-    hr{border:0;border-top:1px solid #eee;margin:30px 0}
-    footer{font-size:11px;color:#888;text-align:center}</style></head><body>
-    <header>
-      <h2>${month} 전문 연금 실무 보고서</h2>
-      <p style="margin:5px 0 0">수신: 연금 투자자 귀하 | 작성: 연금 포트폴리오 파일럿 Pro</p>
-      <p style="margin:3px 0 0;font-size:11px;color:#888">생성 시각: ${now.toLocaleString('ko-KR')} | 신뢰등급: ${dataMeta?.confidenceGrade || '—'}</p>
-    </header>
-    
-    ${warningsHTML}
-    
-    <div class="metrics">
-      <div class="metric-box"><div style="font-size:11px;color:#666">총 자산</div><div class="metric-val">${fmt(total)}원</div></div>
-      <div class="metric-box"><div style="font-size:11px;color:#666">기대 수익률</div><div class="metric-val">${fmtR(annualExpRet)}</div></div>
-      <div class="metric-box"><div style="font-size:11px;color:#666">기대 변동성</div><div class="metric-val">${fmtP(vol)}</div></div>
-      <div class="metric-box"><div style="font-size:11px;color:#666">샤프 지수</div><div class="metric-val">${sharpe.toFixed(2)}</div></div>
-    </div>
+  const holdingsHTML = holdings
+    .sort((a, b) => {
+      const pA = getAssetPriority(buildAssetClassTag(a));
+      const pB = getAssetPriority(buildAssetClassTag(b));
+      if (pA !== pB) return pA - pB;
+      return (a.etf || "").localeCompare(b.etf || "");
+    })
+    .map(h => {
+      const tag = buildAssetClassTag(h);
+      const diff = (h.cur || 0) - (h.target || 0);
+      const pnl = h.costAmt > 0 ? ((h.amt - h.costAmt) / h.costAmt * 100).toFixed(1) : "-";
+      return `<tr>
+        <td style="color:#666">${tag}</td>
+        <td style="font-weight:700">${h.etf}</td>
+        <td>${h.cur}%</td><td>${h.target}%</td>
+        <td style="color:${Math.abs(diff) >= 5 ? (diff > 0 ? "#d13131" : "#185fa5") : "#333"}">${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%p</td>
+        <td>${fmt(h.amt)}원</td>
+        <td style="color:${pnl !== "-" && parseFloat(pnl) < 0 ? "#d13131" : "#28a745"}">${pnl !== "-" ? (pnl >= 0 ? "+" : "") + pnl + "%" : "-"}</td>
+      </tr>`;
+    }).join("");
 
-    <div class="calc-note">
-      📐 <strong>산식 근거</strong>: 변동성 = Σ(자산비중 × 자산별σ) | 샤프 = (기대수익률 - 무위험이자 3%) / 변동성 | 계산방식: ${metrics.calcMode === 'estimated' ? '추정(자산군 평균)' : '실현(일일수익률)'}
-    </div>
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pension Strategy Monthly Report</title>
+  <style>
+    body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #333; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { color: #185fa5; font-size: 28px; border-bottom: 3px solid #185fa5; padding-bottom: 10px; margin-bottom: 30px; }
+    h2 { color: #333; font-size: 20px; margin-top: 40px; border-left: 5px solid #185fa5; padding-left: 12px; }
+    h3 { font-size: 16px; margin-top: 25px; color: #555; }
+    .kpi-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 25px 0; }
+    .kpi-card { background: #f8f9fa; border: 1px solid #eee; padding: 15px; border-radius: 12px; }
+    .kpi-label { font-size: 13px; color: #888; margin-bottom: 4px; }
+    .kpi-value { font-size: 20px; font-weight: 800; color: #185fa5; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 13px; }
+    th { background: #f1f3f5; padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6; color: #495057; }
+    td { padding: 10px; border-bottom: 1px solid #eee; }
+    .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #aaa; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>연금 포트폴리오 월간 리포트 (${dateStr})</h1>
+  
+  <div class="kpi-container">
+    <div class="kpi-card"><div class="kpi-label">총 자산</div><div class="kpi-value">${fmt(metrics.totalAmt)}원</div></div>
+    <div class="kpi-card"><div class="kpi-label">누적 수익률</div><div class="kpi-value" style="color:${metrics.pnl >= 0 ? "#28a745" : "#d13131"}">${(metrics.pnlPct || 0).toFixed(1)}% (${fmt(metrics.pnl)}원)</div></div>
+  </div>
 
-    <h3>1. 매니저 인사이트</h3>
-    <div class="insight-card">${managerInsight}</div>
+  ${warningsHTML}
 
-    <h3>2. 전략 및 리스크 현황</h3>
-    <p>적용 전략: <strong>${s.name}</strong> (${s.level}) / 계좌 유형: <strong>${portfolio.accountType}</strong><br>
+  <h2>1. 시장 국면 및 전략 진단</h2>
+  <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
+    <p style="margin:0; font-size:14px;">현재 선택된 전략: <strong>${s.name}</strong><br/>
     시장 국면: <strong>VIX ${vix?.toFixed(1) || "…"} (${z.lbl})</strong> - ${z.desc}</p>
+  </div>
 
-    <h3>3. 자산 클래스별 상세 분석</h3>
-    <table><thead><tr><th>자산명</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>
-    <tbody>${holdingsHTML}</tbody></table>
+  <h2>2. 자산 배분 비중 요약</h2>
+  ${chartHTML}
 
-    <h3>4. 은퇴 준비도 진단</h3>
-    <p>${sharpe > 0.5 ? "효율적인 위험 배분이 이루어지고 있습니다." : "보다 공격적인 자산 배분 테마로의 전환을 고려할 수 있는 시점입니다."}</p>
-    
-    <hr>
-    <footer>본 보고서는 연금 자산 시뮬레이션 기반이며 최종 투자 결정은 투자자의 판단에 따릅니다.</footer>
-  </body></html>`;
+  <h2>3. 자산 클래스별 상세 분석</h2>
+  <table><thead><tr><th>자산군 태그</th><th>자산명</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>
+  <tbody>${holdingsHTML}</tbody></table>
+  
+  <div class="footer">본 보고서는 연금 자산 시뮬레이션 기반이며 최종 투자 결정은 투자자의 판단에 따릅니다.</div>
+</body></html>`;
 }
 
-export function generateLlmReadyReportHTML({ portfolio, vix, vixSource, vixUpdatedAt, vixError, dataMeta }) {
+export function generateLlmReadyReportHTML({
+  portfolio,
+  vix,
+  vixSource,
+  vixUpdatedAt,
+  vixError,
+  dataMeta,
+  benchmarkOverride = null,
+  overlayMeta = null,
+}) {
   const now = new Date();
-  const month = `${now.getFullYear()}년 ${String(now.getMonth() + 1).padStart(2, '0')}월`;
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const model = buildReportModel({ portfolio, vix, now });
-  const accountConstraint = portfolio.accountType === 'IRP' ? ' (위험자산 한도 70%)' : '';
+  const effectiveBenchmark = benchmarkOverride || model.benchmark;
+  const effectiveAlpha =
+    model.performance.periodReturn != null && effectiveBenchmark?.periodReturn != null
+      ? model.performance.periodReturn - effectiveBenchmark.periodReturn
+      : model.alpha;
+  const effectiveOverlay = overlayMeta || model.strategyOverlay;
   const warnings = [
-    vixError ? `VIX 데이터 오류: ${vixError}` : null,
+    vixError ? `VIX warning: ${vixError}` : null,
     model.performance.returnAnomalyNote,
     model.strategyReview.warning,
-    model.benchmark.isProxy ? `${model.benchmark.name} 성과는 동일 기간 프록시 수익률입니다.` : null,
+    effectiveBenchmark?.isProxy ? `${effectiveBenchmark.name} is using a proxy benchmark.` : null,
   ].filter(Boolean);
+
   const retirement = model.retirementHorizon;
   const retirementText = retirement.currentAge
-    ? `현재 나이 ${retirement.currentAge}세, 예상 은퇴연도 ${retirement.expectedRetirementYear}년, 월평균 적립액 ${fmt(retirement.monthlyContribution)}원, 필요 CAGR ${retirement.targetCagr != null ? fmtR(retirement.targetCagr) : '산정 필요'}`
-    : '은퇴 로드맵 입력값이 없어 투자 시계 데이터 산정이 필요합니다.';
+    ? `Current age ${retirement.currentAge}, expected retirement year ${retirement.expectedRetirementYear}, avg monthly contribution ${fmt(retirement.monthlyContribution)}, target CAGR ${retirement.targetCagr != null ? fmtR(retirement.targetCagr) : 'needs estimate'}`
+    : 'Retirement roadmap inputs are incomplete.';
 
-  const holdingsRows = model.holdings.map(holding => `
-    <tr>
-      <td>${escapeHtml(holding.displayName)}</td>
-      <td>${escapeHtml(holding.assetClassTag)}</td>
-      <td>${holding.cur}%</td>
-      <td>${holding.target}%</td>
-      <td style="color:${Math.abs(holding.diff) >= 5 ? (holding.diff > 0 ? '#d13131' : '#185fa5') : '#333'}">${holding.diff >= 0 ? '+' : ''}${holding.diff.toFixed(1)}%p</td>
-      <td>${fmt(holding.amt)}원</td>
-      <td style="color:${holding.pnlPct != null && holding.pnlPct < 0 ? '#d13131' : '#28a745'}">${holding.pnlPct != null ? formatPercentValue(holding.pnlPct) : '-'}</td>
-    </tr>
-  `).join('');
+  const overlayText = effectiveOverlay?.overlaySummary
+    ? `Target equity ${effectiveOverlay.targetEquity ?? 'N/A'}%, Vol Scale ${effectiveOverlay.volScale ?? 'N/A'}x, CAPE ${effectiveOverlay.overlaySummary.cape ?? 'N/A'}, HY Spread ${effectiveOverlay.overlaySummary.creditSpread ?? 'N/A'}, 10Y-2Y ${effectiveOverlay.overlaySummary.yieldSpread ?? 'N/A'}, VIX ${effectiveOverlay.overlaySummary.vix ?? 'N/A'}`
+    : 'No market overlay applied';
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${month} 연금 운용 보고서</title>
-    <style>
-      body{font-family:sans-serif;font-size:13px;line-height:1.7;padding:40px;max-width:880px;margin:0 auto;color:#333}
-      header{border-bottom:3px solid #185fa5;padding-bottom:15px;margin-bottom:25px}
-      h2{font-size:22px;margin:0;color:#185fa5}h3{font-size:15px;margin:25px 0 10px;border-left:4px solid #185fa5;padding-left:10px;color:#111}
-      table{width:100%;border-collapse:collapse;font-size:12px;margin:15px 0}
-      th{background:#f8f9fa;text-align:left;padding:8px;border-bottom:2px solid #dee2e6}
-      td{padding:8px;border-bottom:1px solid #eee;vertical-align:top}
-      .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
-      .metric-box{background:#f8f9fa;padding:12px;border-radius:8px;text-align:center}
-      .metric-val{font-size:16px;font-weight:700;color:#185fa5}
-      .insight-card{background:#eef6ff;padding:15px;border-radius:10px;border-left:5px solid #185fa5}
-      .warning{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px;margin:14px 0}
-      .llm-meta{background:#f8f9fa;border-radius:8px;padding:12px;font-size:12px}
-      footer{font-size:11px;color:#888;text-align:center;margin-top:30px;border-top:1px solid #eee;padding-top:15px}
-    </style></head><body>
-    <header>
-      <h2>${month} 전문 연금 운용 보고서</h2>
-      <p style="margin:5px 0 0">수신: 연금 투자자 귀하 | 작성: 연금 포트폴리오 파일럿 Pro</p>
-      <p style="margin:3px 0 0;font-size:11px;color:#888">생성 시각: ${now.toLocaleString('ko-KR')} | VIX 출처: ${escapeHtml(vixSource || '—')} ${vixUpdatedAt ? `(${new Date(vixUpdatedAt).toLocaleString('ko-KR')})` : ''}</p>
-    </header>
+  const tagWeights = model.holdings.reduce((acc, holding) => {
+    acc[holding.assetClassTag] = (acc[holding.assetClassTag] || 0) + (Number(holding.cur) || 0);
+    return acc;
+  }, {});
+  const chartHTML = generateDonutSVG(tagWeights);
 
-    ${warnings.length > 0 ? `<div class="warning"><strong>데이터/전략 주의사항</strong><ul>${warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
+  const holdingsRows = model.holdings
+    .map((holding) => `
+      <tr>
+        <td style="color:#666">${escapeHtml(holding.assetClassTag)}</td>
+        <td style="font-weight:700">${escapeHtml(holding.displayName)}</td>
+        <td>${holding.cur}%</td>
+        <td>${holding.target}%</td>
+        <td style="color:${Math.abs(holding.diff) >= 5 ? (holding.diff > 0 ? '#d13131' : '#185fa5') : '#333'}">${holding.diff >= 0 ? '+' : ''}${holding.diff.toFixed(1)}%p</td>
+        <td>${fmt(holding.amt)} KRW</td>
+        <td style="color:${holding.pnlPct != null && holding.pnlPct < 0 ? '#d13131' : '#28a745'}">${holding.pnlPct != null ? formatPercentValue(holding.pnlPct) : '-'}</td>
+      </tr>
+    `)
+    .join('');
 
-    <div class="metrics">
-      <div class="metric-box"><div>총 자산</div><div class="metric-val">${fmt(model.total)}원</div></div>
-      <div class="metric-box"><div>스냅샷 성과</div><div class="metric-val">${formatPercentValue(model.performance.periodReturn)}</div></div>
-      <div class="metric-box"><div>${escapeHtml(model.benchmark.name)}</div><div class="metric-val">${formatPercentValue(model.benchmark.periodReturn)}</div></div>
-      <div class="metric-box"><div>Alpha</div><div class="metric-val" style="color:${model.alpha != null && model.alpha < 0 ? '#d13131' : '#28a745'}">${formatPercentValue(model.alpha)}</div></div>
-    </div>
+  const contributionRows = Object.entries(model.contributionByAssetClass || {})
+    .map(([assetClass, value]) => `
+      <tr>
+        <td>${escapeHtml(assetClass)}</td>
+        <td style="color:${value < 0 ? '#d13131' : '#28a745'}">${value >= 0 ? '+' : '-'}${fmt(Math.abs(value))} KRW</td>
+      </tr>
+    `)
+    .join('');
 
-    <h3>1. 개인 성과 요약</h3>
-    <table><tbody>
-      <tr><th>원가 합계</th><td>${model.performance.costTotal > 0 ? `${fmt(model.performance.costTotal)}원` : '원가 입력 필요'}</td><th>평가손익</th><td>${model.performance.unrealizedPnl != null ? `${model.performance.unrealizedPnl >= 0 ? '+' : '-'}${fmt(Math.abs(model.performance.unrealizedPnl))}원 (${formatPercentValue(model.performance.unrealizedReturn)})` : '원가 입력 필요'}</td></tr>
-      <tr><th>스냅샷 기준 성과</th><td>${model.performance.hasHistory ? `${model.performance.firstDate} 대비 ${formatPercentValue(model.performance.periodReturn)}` : '정상 스냅샷 부족'}</td><th>연환산 단순 성과</th><td>${formatPercentValue(model.performance.annualizedReturn)}</td></tr>
-      <tr><th>벤치마크</th><td>${escapeHtml(model.benchmark.name)} ${formatPercentValue(model.benchmark.periodReturn)}</td><th>초과 성과</th><td>${formatPercentValue(model.alpha)}</td></tr>
-    </tbody></table>
+  return `<!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${month} Pension Report</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:13px;line-height:1.7;padding:40px;max-width:880px;margin:0 auto;color:#333}
+        header{border-bottom:3px solid #185fa5;padding-bottom:15px;margin-bottom:25px}
+        h2{font-size:22px;margin:0;color:#185fa5}
+        h3{font-size:15px;margin:25px 0 10px;border-left:4px solid #185fa5;padding-left:10px;color:#111}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin:15px 0}
+        th{background:#f8f9fa;text-align:left;padding:8px;border-bottom:2px solid #dee2e6}
+        td{padding:8px;border-bottom:1px solid #eee;vertical-align:top}
+        .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+        .metric-box{background:#f8f9fa;padding:12px;border-radius:8px;text-align:center}
+        .metric-val{font-size:16px;font-weight:700;color:#185fa5}
+        .insight-card{background:#eef6ff;padding:15px;border-radius:10px;border-left:5px solid #185fa5}
+        .warning{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px;margin:14px 0}
+        .meta-card{background:#f8f9fa;border-radius:8px;padding:12px;font-size:12px}
+        footer{font-size:11px;color:#888;text-align:center;margin-top:30px;border-top:1px solid #eee;padding-top:15px}
+      </style>
+    </head>
+    <body>
+      <header>
+        <h2>${month} Personal Pension Report</h2>
+        <p style="margin:5px 0 0">Generated at: ${now.toLocaleString('ko-KR')}</p>
+        <p style="margin:3px 0 0;font-size:11px;color:#888">VIX source: ${escapeHtml(vixSource || 'Unknown')}${vixUpdatedAt ? ` (${new Date(vixUpdatedAt).toLocaleString('ko-KR')})` : ''}</p>
+      </header>
 
-    <h3>2. 매니저 인사이트</h3>
-    <div class="insight-card">${escapeHtml(model.managerInsight)}</div>
+      ${warnings.length > 0 ? `<div class="warning"><strong>Data and interpretation notes</strong><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
 
-    <h3>3. 전략 및 계좌 제약</h3>
-    <p>표시 전략: <strong>${escapeHtml(model.displayStrategyName)}</strong>${model.strategyReview.mismatch ? ` <span style="color:#d13131">(원 선택 전략: ${escapeHtml(model.strategy.name)})</span>` : ''}<br>
-    계좌 유형: <strong>${escapeHtml(portfolio.accountType)}${accountConstraint}</strong><br>
-    시장 국면: <strong>VIX ${vix?.toFixed(1) || '…'} (${escapeHtml(model.z.lbl)})</strong> - ${escapeHtml(model.z.desc)}</p>
+      <div class="metrics">
+        <div class="metric-box"><div>Total Value</div><div class="metric-val">${fmt(model.total)} KRW</div></div>
+        <div class="metric-box"><div>Period Return</div><div class="metric-val">${formatPercentValue(model.performance.periodReturn)}</div></div>
+        <div class="metric-box"><div>${escapeHtml(effectiveBenchmark?.name || model.benchmark.name)}</div><div class="metric-val">${formatPercentValue(effectiveBenchmark?.periodReturn)}</div></div>
+        <div class="metric-box"><div>Alpha</div><div class="metric-val" style="color:${effectiveAlpha != null && effectiveAlpha < 0 ? '#d13131' : '#28a745'}">${formatPercentValue(effectiveAlpha)}</div></div>
+      </div>
 
-    <h3>4. 자산 상세 분석표</h3>
-    <table><thead><tr><th>자산명(티커)</th><th>자산군 태그</th><th>현재 비중</th><th>목표 비중</th><th>편차</th><th>평가금액</th><th>수익률</th></tr></thead>
-    <tbody>${holdingsRows}</tbody></table>
+      <h3>1. Performance Summary</h3>
+      <table>
+        <tbody>
+          <tr><th>Cost Basis</th><td>${model.performance.costTotal > 0 ? `${fmt(model.performance.costTotal)} KRW` : 'Cost basis required'}</td><th>Unrealized PnL</th><td>${model.performance.unrealizedPnl != null ? `${model.performance.unrealizedPnl >= 0 ? '+' : '-'}${fmt(Math.abs(model.performance.unrealizedPnl))} KRW (${formatPercentValue(model.performance.unrealizedReturn)})` : 'Cost basis required'}</td></tr>
+          <tr><th>Period Return</th><td>${model.performance.hasHistory ? `${model.performance.firstDate} onward ${formatPercentValue(model.performance.periodReturn)}` : 'Insufficient history'}</td><th>Annualized Return</th><td>${formatPercentValue(model.performance.annualizedReturn)}</td></tr>
+          <tr><th>Benchmark</th><td>${escapeHtml(effectiveBenchmark?.name || model.benchmark.name)} ${formatPercentValue(effectiveBenchmark?.periodReturn)}</td><th>Excess Return</th><td>${formatPercentValue(effectiveAlpha)}</td></tr>
+          <tr><th>Rolling Gap</th><td>1Y ${formatPercentValue(model.performance.benchmarkGap1Y)} / 3Y ${formatPercentValue(model.performance.benchmarkGap3Y)}</td><th>Benchmark Source</th><td>${escapeHtml(effectiveBenchmark?.isProxy ? 'proxy' : 'actual')}</td></tr>
+        </tbody>
+      </table>
 
-    <h3>5. 은퇴 준비도 진단 및 LLM 메타데이터</h3>
-    <div class="llm-meta">
-      ${escapeHtml(retirementText)}<br>
-      보고서 해석용 메타데이터: accountType=${escapeHtml(portfolio.accountType)}, strategy=${escapeHtml(model.displayStrategyName)}, benchmark=${escapeHtml(model.benchmark.name)}, vix=${vix ?? 'null'}
-    </div>
+      <h3>2. Manager Insight</h3>
+      <div class="insight-card">${escapeHtml(model.managerInsight)}</div>
 
-    <footer>본 보고서는 연금 자산 시뮬레이션 기반이며 최종 투자 결정은 투자자의 판단에 따릅니다.</footer>
-    </body></html>`;
+      <h3>3. Strategy and Risk Meta</h3>
+      <div class="meta-card">
+        <div>Strategy: <strong>${escapeHtml(model.displayStrategyName)}</strong></div>
+        <div>Account Type: <strong>${escapeHtml(portfolio.accountType)}</strong></div>
+        <div>Market Regime: <strong>VIX ${vix?.toFixed(1) || 'N/A'} (${escapeHtml(model.z.lbl)})</strong> - ${escapeHtml(model.z.desc)}</div>
+        <div>Overlay: ${escapeHtml(overlayText)}</div>
+        ${dataMeta ? `<div>Data Meta: ${escapeHtml(JSON.stringify(dataMeta))}</div>` : ''}
+      </div>
+
+      <h3>4. Allocation Summary</h3>
+      ${chartHTML}
+
+      <h3>5. Holdings Detail</h3>
+      <table>
+        <thead>
+          <tr><th>Asset Class</th><th>자산명(티커)</th><th>Current Wt</th><th>Target Wt</th><th>Drift</th><th>Market Value</th><th>PnL</th></tr>
+        </thead>
+        <tbody>${holdingsRows}</tbody>
+      </table>
+
+      ${contributionRows ? `<h3>6. Contribution by Asset Class</h3><table><thead><tr><th>Asset Class</th><th>Contribution</th></tr></thead><tbody>${contributionRows}</tbody></table>` : ''}
+
+      <h3>7. Retirement and LLM Meta</h3>
+      <div class="meta-card">
+        <div>${escapeHtml(retirementText)}</div>
+        <div style="margin-top:8px">accountType=${escapeHtml(portfolio.accountType)}, strategy=${escapeHtml(model.displayStrategyName)}, benchmark=${escapeHtml(effectiveBenchmark?.name || model.benchmark.name)}, benchmarkSource=${escapeHtml(effectiveBenchmark?.isProxy ? 'proxy' : 'actual')}, vix=${vix ?? 'null'}, overlay=${escapeHtml(overlayText)}</div>
+      </div>
+
+      <footer>This report is a planning aid only. Final investment decisions and order execution remain the investor's responsibility.</footer>
+    </body>
+  </html>`;
 }
 
 /**

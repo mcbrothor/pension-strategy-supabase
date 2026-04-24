@@ -33,7 +33,7 @@ function buildRiskHoldings(portfolio) {
     const cur = total > 0 ? Math.round((Number(h.amt) || 0) / total * 1000) / 10 : 0;
     return { ...h, cur };
   });
-  const historyEligibleHoldings = holdings.filter(h => h.code && h.code !== "CASH" && h.cls !== "현금MMF");
+  const historyEligibleHoldings = holdings.filter(h => h.code && h.code !== "CASH");
 
   return { total, holdings, historyEligibleHoldings };
 }

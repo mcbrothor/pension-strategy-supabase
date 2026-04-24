@@ -4,6 +4,7 @@ import { fmt } from "../../utils/formatters.js";
 import { ASSET_CLASSES, ASSET_COLORS } from "../../constants/index.js";
 import { buildHoldingsCsvTemplate, parseHoldingsCsvText } from "../../utils/holdingsCsv.js";
 import { buildDisplayHoldings, computePrincipalReturn, sumAmounts } from "../../utils/portfolioDisplay.js";
+import { calculateIRPRiskRatio } from "../../services/rebalanceEngine.js";
 
 const inputStyle = {
   width: "100%",
@@ -28,21 +29,12 @@ const labelStyle = {
 };
 
 const ASSET_CLASS_DISPLAY_NAMES = [
-  "미국주식",
-  "선진국주식",
-  "신흥국주식",
-  "국내주식",
-  "미국단기채권",
-  "미국중기채권",
-  "물가연동채권",
-  "회사채",
-  "하이일드채권",
-  "신흥국채권",
-  "글로벌채권",
-  "금",
-  "원자재",
-  "부동산리츠",
-  "현금MMF",
+  "미국 주식",
+  "국내 주식",
+  "장기채",
+  "단기채",
+  "실물자산",
+  "현금",
 ];
 
 const ASSET_CLASS_LABELS = new Map(
@@ -51,8 +43,9 @@ const ASSET_CLASS_LABELS = new Map(
 
 const DEFAULT_ASSET_CLASS = ASSET_CLASSES[0];
 const CASH_ASSET_CLASS =
-  ASSET_CLASSES.find((item) => ASSET_CLASS_LABELS.get(item) === "현금MMF") ||
+  ASSET_CLASSES.find((item) => ASSET_CLASS_LABELS.get(item) === "현금") ||
   ASSET_CLASSES[ASSET_CLASSES.length - 1];
+const CASH_TICKER = "CASH";
 
 function getAssetClassLabel(assetClass) {
   return ASSET_CLASS_LABELS.get(assetClass) || assetClass || "기타";
@@ -141,9 +134,9 @@ function mergeHolding(existingItem, incomingItem) {
     etf: incomingItem.etf || existingItem.etf,
     code: incomingItem.code || existingItem.code,
     cls: incomingItem.cls || existingItem.cls,
-    qty: incomingItem.cls === CASH_ASSET_CLASS ? 0 : mergedQty,
+    qty: incomingItem.code === CASH_TICKER ? 0 : mergedQty,
     price: Number(incomingItem.price) || Number(existingItem.price) || 0,
-    amt: incomingItem.cls === CASH_ASSET_CLASS ? mergedAmt : mergedAmt,
+    amt: mergedAmt,
     costAmt: mergedCostAmt,
     updatedAt: incomingItem.updatedAt || existingItem.updatedAt || null,
   };
@@ -299,12 +292,12 @@ function EditModal({ isOpen, item, krEtfs, onClose, onSave }) {
 
   if (!isOpen) return null;
 
-  const isCash = form.cls === CASH_ASSET_CLASS;
+  const isCash = form.code === CASH_TICKER;
 
   const updateForm = (key, value) => {
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      if (next.cls === CASH_ASSET_CLASS) {
+      if (next.code === CASH_TICKER) {
         next.qty = 0;
         next.price = 0;
       }
@@ -471,22 +464,56 @@ export default function EntryPanel({
     [evaluationAmount, portfolio.evaluationUpdatedAt, rows]
   );
   const totalAmt = sumAmounts(displayRows);
+  const totalNonCashAmt = displayRows
+    .filter(row => row.code !== CASH_TICKER)
+    .reduce((sum, row) => sum + (Number(row.amt) || 0), 0);
   const principalTotal = Number(portfolio.principalTotal) || 0;
   const principalReturn = computePrincipalReturn(principalTotal, evaluationAmount);
+  const allocationSummary = useMemo(() => {
+    const grouped = {};
+    displayRows.forEach((row) => {
+      grouped[row.cls] = (grouped[row.cls] || 0) + (Number(row.amt) || 0);
+    });
+    return grouped;
+  }, [displayRows]);
+  const annualContribution = Number(portfolio.retirementPlan?.annualContribution) || (Number(portfolio.retirementPlan?.monthlyContribution) || 0) * 12;
+  const taxCreditLimit = Number(portfolio.retirementPlan?.taxCreditLimit) || 6000000;
+  const irpRiskRatio = calculateIRPRiskRatio(
+    Object.entries(allocationSummary).map(([cls, amt]) => ({
+      cls,
+      cur: totalAmt > 0 ? (Number(amt) / totalAmt) * 100 : 0,
+    }))
+  );
   const totalPnl = principalReturn?.amount ?? null;
   const totalPnlPct = principalReturn?.pct ?? null;
   const canPersistToSupabase = syncStatus === "supabase";
   const requiresLogin = syncStatus === "auth_required";
 
   const sortedAlloc = useMemo(() => {
-    const grouped = {};
-    displayRows.forEach((row) => {
-      grouped[row.cls] = (grouped[row.cls] || 0) + (Number(row.amt) || 0);
-    });
-    return Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-  }, [displayRows]);
+    return Object.entries(allocationSummary).sort((a, b) => b[1] - a[1]);
+  }, [allocationSummary]);
 
-  const isNewCash = newItem.cls === CASH_ASSET_CLASS;
+  const isNewCash = newItem.code === CASH_TICKER;
+
+  const confirmIrpLimit = (nextRows) => {
+    const newTotal = nextRows.reduce((s, r) => s + (Number(r.amt) || 0), 0);
+    const grouped = {};
+    nextRows.forEach((r) => { grouped[r.cls] = (grouped[r.cls] || 0) + (Number(r.amt) || 0); });
+    const nextRatio = calculateIRPRiskRatio(
+      Object.entries(grouped).map(([cls, amt]) => ({
+        cls,
+        cur: newTotal > 0 ? (amt / newTotal) * 100 : 0,
+      }))
+    );
+    if (nextRatio <= 70) return true;
+    const excess = (nextRatio - 70).toFixed(1);
+    return window.confirm(
+      `⚠ IRP 위험자산 한도 초과\n\n` +
+      `저장 후 위험자산 비중: ${nextRatio.toFixed(1)}% (한도 70%, +${excess}%p)\n` +
+      `실제 증권사 주문 시 차단될 수 있습니다.\n\n` +
+      `저장하시겠습니까?`
+    );
+  };
 
   const updateNewItem = (key, value) => {
     setNewItem((prev) => {
@@ -498,10 +525,6 @@ export default function EntryPanel({
           next.code = resolved.ticker;
           next.cls = resolved.assetClass || next.cls;
         }
-      }
-      if (next.cls === CASH_ASSET_CLASS) {
-        next.qty = 0;
-        next.price = 0;
       }
       if (key === "qty" || key === "price") {
         next.amt = (Number(next.qty) || 0) * (Number(next.price) || 0);
@@ -551,7 +574,7 @@ export default function EntryPanel({
       : { ...newItem, updatedAt };
 
     if (!nextItem.cls) return alert("자산군을 선택하세요.");
-    if (nextItem.cls !== CASH_ASSET_CLASS && !nextItem.code) {
+    if (!nextItem.code) {
       return alert("종목명 자동완성 또는 티커 입력으로 종목을 확인해주세요.");
     }
     if (Number(nextItem.amt) <= 0) return alert("평가금액은 0보다 커야 합니다.");
@@ -566,6 +589,8 @@ export default function EntryPanel({
       existingIndex === -1
         ? [...rows, { ...nextItem }]
         : rows.map((row, index) => (index === existingIndex ? mergeHolding(row, nextItem) : row));
+
+    if (portfolio.accountType === "IRP" && !confirmIrpLimit(nextRows)) return;
 
     const updatedKey = nextItem.code || nextItem.etf;
     try {
@@ -587,6 +612,9 @@ export default function EntryPanel({
 
     const nextRows = [...rows];
     nextRows[editTarget.idx] = { ...item, updatedAt: new Date().toISOString() };
+
+    if (portfolio.accountType === "IRP" && !confirmIrpLimit(nextRows)) return;
+
     try {
       syncRows(nextRows);
       setEditTarget({ item: null, idx: -1 });
@@ -802,20 +830,13 @@ export default function EntryPanel({
                   />
                 </div>
 
-                {isNewCash ? (
-                  <div>
-                    <label style={labelStyle}>금액</label>
-                    <input type="number" style={{ ...inputStyle, fontWeight: 700 }} value={newItem.amt || ""} onChange={(e) => updateNewItem("amt", e.target.value)} data-testid="manual-amount-input" placeholder="금액 입력" disabled={!canPersistToSupabase} />
+                <div>
+                  <label style={labelStyle}>수량 및 단가</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input type="number" style={{ ...inputStyle, width: "72px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={(e) => updateNewItem("qty", e.target.value)} data-testid="manual-qty-input" placeholder="수량" disabled={!canPersistToSupabase} />
+                    <input type="number" style={inputStyle} value={newItem.price || ""} onChange={(e) => updateNewItem("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" placeholder="현재가" disabled={!canPersistToSupabase} />
                   </div>
-                ) : (
-                  <div>
-                    <label style={labelStyle}>수량 및 단가</label>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <input type="number" style={{ ...inputStyle, width: "72px", padding: "10px 8px" }} value={newItem.qty || ""} onChange={(e) => updateNewItem("qty", e.target.value)} data-testid="manual-qty-input" placeholder="수량" disabled={!canPersistToSupabase} />
-                      <input type="number" style={inputStyle} value={newItem.price || ""} onChange={(e) => updateNewItem("price", e.target.value)} onBlur={fetchNewItemPrice} data-testid="manual-price-input" placeholder="현재가" disabled={!canPersistToSupabase} />
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
               <div>
@@ -836,19 +857,15 @@ export default function EntryPanel({
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(255,255,255,0.02)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.05)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  {!isNewCash ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <label style={{ ...labelStyle, marginBottom: 0 }}>티커 검색</label>
-                        <input style={{ ...inputStyle, width: "110px", padding: "6px 10px" }} value={newItem.code} onChange={(e) => updateNewItem("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={(e) => e.key === "Enter" && fetchNewItemPrice()} data-testid="manual-code-input" placeholder="예: 360750" disabled={!canPersistToSupabase} />
-                      </div>
-                      <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code || !canPersistToSupabase} style={{ height: "32px" }}>
-                        {loading ? "조회 중" : "시세 자동조회"}
-                      </Btn>
-                    </>
-                  ) : (
-                    <div style={{ fontSize: "11px", color: "var(--text-dim)" }}>현금성 자산은 티커 없이 금액만 입력할 수 있습니다.</div>
-                  )}
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <label style={{ ...labelStyle, marginBottom: 0 }}>티커 검색</label>
+                      <input style={{ ...inputStyle, width: "110px", padding: "6px 10px" }} value={newItem.code} onChange={(e) => updateNewItem("code", e.target.value)} onBlur={fetchNewItemPrice} onKeyDown={(e) => e.key === "Enter" && fetchNewItemPrice()} data-testid="manual-code-input" placeholder="예: 360750" disabled={!canPersistToSupabase} />
+                    </div>
+                    <Btn sm onClick={fetchNewItemPrice} disabled={loading || !newItem.code || !canPersistToSupabase} style={{ height: "32px" }}>
+                      {loading ? "조회 중" : "시세 자동조회"}
+                    </Btn>
+                  </>
                 </div>
 
                 <Btn primary data-testid="manual-add-button" onClick={handleAddItem} style={{ height: "38px", padding: "0 24px", fontWeight: 700 }} disabled={!canPersistToSupabase}>
@@ -990,8 +1007,13 @@ export default function EntryPanel({
 
             <div style={{ marginTop: "1.5rem", padding: "1rem 1.25rem", background: "var(--bg-main)", borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: "12px", color: "var(--text-dim)" }}>총 {displayRows.length}개 자산</div>
-              <div style={{ fontSize: "15px", fontWeight: 600 }}>
-                자산 합계 <span style={{ fontSize: "22px", fontWeight: 800, color: "var(--accent-main)" }}>{fmt(totalAmt)}</span>
+              <div style={{ fontSize: "15px", fontWeight: 600, display: "flex", gap: "24px", alignItems: "baseline" }}>
+                <div style={{ fontSize: "13px", color: "var(--text-dim)" }}>
+                  현금 제외 <span style={{ fontSize: "17px", fontWeight: 700, color: "var(--text-main)" }}>{fmt(totalNonCashAmt)}</span>
+                </div>
+                <div>
+                  자산 합계 <span style={{ fontSize: "22px", fontWeight: 800, color: "var(--accent-main)" }}>{fmt(totalAmt)}</span>
+                </div>
               </div>
             </div>
           </Card>
@@ -1074,6 +1096,22 @@ export default function EntryPanel({
                     {totalPnl == null ? "-" : `${totalPnl >= 0 ? "+" : "-"}${fmt(Math.abs(totalPnl))} (${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(1)}%)`}
                   </div>
                 </div>
+              </div>
+              <div style={{ padding: "12px 14px", borderRadius: "10px", background: annualContribution > taxCreditLimit ? "var(--alert-warn-bg)" : "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px" }}>연금 납입/규제 경고</div>
+                <div style={{ fontSize: "12px", lineHeight: 1.7, color: "var(--text-main)" }}>
+                  연 납입 추정 {fmt(annualContribution)}원 / 세액공제 한도 {fmt(taxCreditLimit)}원
+                </div>
+                {annualContribution > taxCreditLimit && (
+                  <div style={{ fontSize: "11px", color: "var(--alert-warn-color)", marginTop: 6 }}>
+                    세액공제 한도를 초과했습니다. 초과 납입분은 공제 대상이 아닐 수 있습니다.
+                  </div>
+                )}
+                {portfolio.accountType === "IRP" && irpRiskRatio > 70 && (
+                  <div style={{ fontSize: "11px", color: "var(--alert-danger-color)", marginTop: 6 }}>
+                    IRP 위험자산 비중 {irpRiskRatio}%로 한도 70%를 초과했습니다.
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>

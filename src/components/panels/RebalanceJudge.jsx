@@ -3,6 +3,7 @@ import { Card, Badge, Btn, ST, MetaCard, AllocBar, VixBar, ReasonBox } from "../
 import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { ASSET_COLORS } from "../../constants/index.js";
+import { isRiskAssetClass } from "../../services/rebalanceEngine.js";
 
 export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation }) {
 
@@ -38,7 +39,7 @@ export default function RebalanceJudge({ portfolio, vix, vixSource, vixUpdatedAt
     assetClassResults.push({ ...c, cur, diff, pnlPct, targetAmt, actionAmt });
   });
 
-  const irpRisk = Math.round(assetClassResults.filter(c => ["미국주식", "선진국주식", "신흥국주식", "국내주식", "금", "원자재", "부동산리츠"].includes(c.cls)).reduce((s, c) => s + c.cur, 0) * 10) / 10;
+  const irpRisk = Math.round(assetClassResults.filter(c => isRiskAssetClass(c.cls)).reduce((s, c) => s + c.cur, 0) * 10) / 10;
   const sells = assetClassResults.filter(c => c.actionAmt > 5000);
   const buys = assetClassResults.filter(c => c.actionAmt < -5000);
   const holds = assetClassResults.filter(c => Math.abs(c.actionAmt) <= 5000);

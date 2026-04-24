@@ -1,32 +1,47 @@
 import React, { useState } from "react";
 import { Card, ST, Badge, MetaCard, ReasonBox, Btn } from "../common/index.jsx";
+import MarketDataBadge from "../common/MarketDataBadge.jsx";
+import OverlaySummaryCard from "../common/OverlaySummaryCard.jsx";
 import { fmt, fmtP } from "../../utils/formatters.js";
 import { getZone, getStrat } from "../../utils/helpers.js";
 import { aggregateByAssetClass, calculateIRPRiskRatio, checkRebalanceTiming, generateActionTickets, collectReasons } from "../../services/rebalanceEngine.js";
 import { evaluateBuyTheFear } from "../../services/portfolioPlanningEngine.js";
 import { supabase } from "../../lib/supabase.js";
 import { usePortfolio } from "../../context/PortfolioContext.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 /**
  * 주문계획 패널 — 리밸런싱 판단 + 자산군별 조정안
  * 기존 RebalanceJudge의 3단계 워크플로우를 통합합니다.
  */
-export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation, fearGreed, yieldSpread }) {
+export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt, avgCorrelation, fearGreed, yieldSpread, creditSpread, capeRatio, signalMeta }) {
   const [checked, setChecked] = useState({});
   const { updateCashDeploymentState } = usePortfolio();
+  const { user } = useAuth();
 
   const z = getZone(vix);
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
+  const overlayTargets = portfolio.strategyOverlay?.targets || {};
+  const targetWeights = Object.keys(overlayTargets).length > 0
+    ? overlayTargets
+    : portfolio.holdings.reduce((acc, item) => {
+        if (Number(item.target) > 0) acc[item.cls] = Number(item.target);
+        return acc;
+      }, {});
 
   // 리밸런싱 판단
   const timing = checkRebalanceTiming(portfolio.lastRebalDate, portfolio.rebalPeriod);
-  const assetClassResults = aggregateByAssetClass(portfolio.holdings, total);
+  const assetClassResults = aggregateByAssetClass(portfolio.holdings, total, {
+    targetWeights,
+  });
   const irpRiskRatio = calculateIRPRiskRatio(assetClassResults);
-  const targetWeights = assetClassResults.reduce((acc, item) => {
-    if (Number(item.target) > 0) acc[item.cls] = Number(item.target);
-    return acc;
-  }, {});
+  const projectedAssetClassResults = assetClassResults.map((item) => {
+    const projectedAmt = Math.max(0, (Number(item.amt) || 0) - (Number(item.actionAmt) || 0));
+    const projectedCur = total > 0 ? Math.round((projectedAmt / total) * 1000) / 10 : 0;
+    return { ...item, cur: projectedCur };
+  });
+  const projectedIrpRiskRatio = calculateIRPRiskRatio(projectedAssetClassResults);
   const fearDecision = evaluateBuyTheFear({
     baseWeights: targetWeights,
     baseCashPct: portfolio.allocationPolicy?.baseCashPct ?? 0,
@@ -66,6 +81,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
       // 1. Supabase Audit Log 저장
       const { error: dbError } = await supabase.from('decision_logs').insert([
         { 
+          user_id: user?.id || null,
           strategy_id: portfolio.strategy,
           account_type: portfolio.accountType,
           action_summary: tickets,
@@ -75,22 +91,23 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
       ]);
       if (dbError) throw dbError;
 
-      // 2. 관리자 이메일 발송 (Settings에서 이메일 읽거나 환경변수/하드코딩 사용)
-      const mockAdminEmail = "admin@example.com";
-      const subject = `[연금운용] ${portfolio.accountType} (${s.name}) 리밸런싱 실행 알림`;
-      const body = `
-        <h3>리밸런싱 완료 알림</h3>
-        <p>계좌: ${portfolio.accountType}</p>
-        <p>전략: ${s.name}</p>
-        <p>실행 내역: 매수 ${buyTickets.length}건, 매도 ${sellTickets.length}건</p>
-        <br/><p>결정 근거</p><ul>${reasons.map(r => `<li>${r.title}: ${r.desc}</li>`).join('')}</ul>
-      `;
-
-      await fetch('/api/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: mockAdminEmail, subject, body })
-      });
+      // 2. 사용자 이메일로 알림 발송 (로그인된 Supabase Auth 이메일 우선, 미설정 시 skip)
+      const recipientEmail = user?.email || portfolio.notifyEmail || null;
+      if (recipientEmail) {
+        const subject = `[연금운용] ${portfolio.accountType} (${s.name}) 리밸런싱 실행 알림`;
+        const body = `
+          <h3>리밸런싱 완료 알림</h3>
+          <p>계좌: ${portfolio.accountType}</p>
+          <p>전략: ${s.name}</p>
+          <p>실행 내역: 매수 ${buyTickets.length}건, 매도 ${sellTickets.length}건</p>
+          <br/><p>결정 근거</p><ul>${reasons.map(r => `<li>${r.title}: ${r.body}</li>`).join('')}</ul>
+        `;
+        await fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: recipientEmail, subject, body })
+        });
+      }
 
       setSaveComplete(true);
     } catch (err) {
@@ -147,13 +164,30 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
               {cashGap > 0 ? ` → 추가 현금 약 ${fmt(cashGap)}원 필요 가능` : " → 매도 참고액 범위 내"}
             </div>
           )}
+          {portfolio.accountType === "IRP" && (
+            <div style={{ marginTop: 4, color: projectedIrpRiskRatio > 70 ? "var(--alert-danger-color)" : "var(--text-dim)" }}>
+              IRP 위험자산 현재 {irpRiskRatio}% / 주문 후 예상 {projectedIrpRiskRatio}% {projectedIrpRiskRatio > 70 ? "→ 한도 초과 가능" : ""}
+            </div>
+          )}
         </div>
       </Card>
+
+      {portfolio.strategyOverlay && (
+        <Card>
+          <OverlaySummaryCard
+            overlay={portfolio.strategyOverlay}
+            title="주문 기준 오버레이"
+          />
+        </Card>
+      )}
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
           <div>
             <ST>Buy the Fear 현금 운용</ST>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              <MarketDataBadge meta={signalMeta} fallbackText="시그널 메타 없음" />
+            </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
               <Badge c="#0c447c" bg="#e6f1fb">평시 현금 {portfolio.allocationPolicy?.baseCashPct ?? 0}%</Badge>
               <Badge c={fearDecision.action === "deploy_cash" ? "#633806" : fearDecision.action === "restore_base_cash" ? "#27500a" : "#555"} bg={fearDecision.action === "deploy_cash" ? "#faeeda" : fearDecision.action === "restore_base_cash" ? "#eaf3de" : "var(--bg-main)"}>
@@ -162,6 +196,7 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
               {fearDecision.reasons.map((reason) => <div key={reason}>• {reason}</div>)}
+              <div>• 보조 신호: CAPE {capeRatio != null ? capeRatio.toFixed(2) : "N/A"} / HY Spread {creditSpread != null ? creditSpread.toFixed(2) : "N/A"} / 10Y-2Y {yieldSpread != null ? yieldSpread.toFixed(2) : "N/A"}</div>
               {fearDecision.deploymentPct > 0 && (
                 <div style={{ marginTop: 4, color: "#633806", fontWeight: 600 }}>
                   이번 단계 투입 비중: {fearDecision.deploymentPct.toFixed(1)}%p
@@ -207,9 +242,13 @@ export default function OrderPlanPanel({ portfolio, vix, vixSource, vixUpdatedAt
                   </div>
                   <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.5 }}>
                     {t.reasons.map((r, ri) => <div key={ri}>• {r}</div>)}
-                    {t.actionType === 'buy' && t.splitPlan > 1 && (
-                      <div>• MTS 참고: 1회당 약 {fmt(Math.round(t.amount / t.splitPlan / 10000) * 10000)}원</div>
-                    )}
+                    <div>
+                      • MTS 참고:{" "}
+                      {t.splitPlan > 1
+                        ? `${t.splitPlan}회 분할 · 1회당 약 ${fmt(Math.round(t.amount / t.splitPlan / 10000) * 10000)}원`
+                        : `약 ${fmt(Math.round(t.amount / 10000) * 10000)}원`}
+                      {t.amount < 50000 && " · MTS 최소 주문금액 확인 필요"}
+                    </div>
                   </div>
                 </div>
                 <div data-testid="asset-class-action-amount" style={{ fontSize: 15, fontWeight: 600, color: t.actionType === 'sell' ? "#a32d2d" : "#185fa5", flexShrink: 0 }}>

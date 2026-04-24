@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import StrategySelect from "./StrategySelect.jsx";
+import CustomPortfolioBuilder from "./CustomPortfolioBuilder.jsx";
 import CompareWeights from "./CompareWeights.jsx";
+import OverlaySummaryCard from "../common/OverlaySummaryCard.jsx";
 import { Card, ST, Badge, MetaCard } from "../common/index.jsx";
-import { runBacktest } from "../../services/backtestEngine.js";
-import { runWalkForward } from "../../services/walkForwardEngine.js";
+import { buildProxyBenchmarkCurve, calculateRollingExcessStats, runBacktest } from "../../services/backtestEngine.js";
+import { runRollingWalkForward, runWalkForward } from "../../services/walkForwardEngine.js";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { buildBenchmarkCurveFromHistory, fetchBenchmarkHistory } from "../../services/benchmarkService.js";
 
 /**
  * 전략검증 패널
@@ -15,7 +18,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
  * - 백테스트 및 Walk-Forward 검증
  * 을 한 곳에서 제공하여 사용자가 전략의 실효성을 직접 확인할 수 있게 합니다.
  */
-export default function ValidationPanel({ portfolio, accountType, onStrategyApply }) {
+export default function ValidationPanel({ portfolio, accountType, onStrategyApply, strategy }) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   // alert() 대신 인라인 상태 메시지로 UX 개선
@@ -36,8 +39,8 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
       // 각 종목별 과거 가격 데이터를 개별 try-catch로 감싸 일부 실패에도 진행
       const promises = holdings.map(async h => {
         try {
-          const isOverseas = ["미국주식", "해외채권", "원자재", "금"].includes(h.cls);
-          // 현금MMF 등 코드가 없는 자산은 건너뜀
+          const isOverseas = ["미국 주식", "실물자산"].includes(h.cls);
+          // 현금 등 코드가 없는 자산은 건너뜀
           if (!h.code) return null;
           const res = await fetch(`/api/kis-history?ticker=${h.code}&type=${isOverseas ? "overseas" : "domestic"}`);
           if (!res.ok) return null;
@@ -63,11 +66,21 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
         setStatusMessage({ type: 'warn', text: `${failedCount}개 종목의 가격 데이터를 불러오지 못해 일부 자산만으로 검증합니다.` });
       }
 
-      const bt = runBacktest(validData, holdings);
-      const wf = runWalkForward(validData, holdings);
+      const [benchmarkHistory, bt, wf, rollingWf] = await Promise.all([
+        fetchBenchmarkHistory(strategy, "ALL", validData[0]?.prices?.length || null).catch(() => null),
+        Promise.resolve(runBacktest(validData, holdings)),
+        Promise.resolve(runWalkForward(validData, holdings)),
+        Promise.resolve(runRollingWalkForward(validData, holdings)),
+      ]);
       
       if (bt && wf) {
-        setResults({ bt, wf });
+        const actualBenchmarkCurve = buildBenchmarkCurveFromHistory(benchmarkHistory, bt.initialCapital, bt.equityCurve.length);
+        const benchmarkCurve = actualBenchmarkCurve.length > 1
+          ? actualBenchmarkCurve
+          : buildProxyBenchmarkCurve(bt.equityCurve.length, bt.initialCapital, strategy?.benchmark === "balanced_60_40" ? 0.075 : 0.1);
+        const rolling3y = calculateRollingExcessStats(bt.equityCurve, benchmarkCurve, 252 * 3);
+        const rolling1y = calculateRollingExcessStats(bt.equityCurve, benchmarkCurve, 252);
+        setResults({ bt, wf, rollingWf, benchmarkCurve, benchmarkSource: actualBenchmarkCurve.length > 1 ? "actual" : "proxy", rolling3y, rolling1y });
         if (!statusMessage) {
           setStatusMessage({ type: 'ok', text: `${validData.length}개 자산의 가격 데이터로 검증 완료` });
         }
@@ -95,8 +108,20 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
       {/* 전략 선택 */}
       <StrategySelect accountType={accountType} onStrategyApply={onStrategyApply} />
 
+      {/* 커스텀 포트폴리오 빌더 */}
+      <CustomPortfolioBuilder />
+
       {/* 비중 비교 */}
       <CompareWeights portfolio={portfolio} />
+
+      {portfolio.strategyOverlay && (
+        <Card>
+          <OverlaySummaryCard
+            overlay={portfolio.strategyOverlay}
+            title="검증 기준 오버레이"
+          />
+        </Card>
+      )}
 
       {/* 백테스트 실행 컨트롤 */}
       <Card>
@@ -143,18 +168,28 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
 
           <div style={{ width: "100%", height: 250, marginTop: 20 }}>
             <ResponsiveContainer>
-              <LineChart data={results.bt.equityCurve} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+              <LineChart data={results.bt.equityCurve.map((point, index) => ({
+                ...point,
+                benchmark: results.benchmarkCurve?.[index]?.value || null,
+              }))} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                 <XAxis dataKey="day" stroke="#ffffff40" fontSize={10} tickFormatter={(v) => `${v}일차`} />
                 <YAxis stroke="#ffffff40" fontSize={10} tickFormatter={(v) => (v / 10000).toFixed(0) + '만'} domain={['auto', 'auto']} />
                 <Tooltip 
-                  formatter={(v) => [`${Math.round(v).toLocaleString()}원`, '평가금액']} 
+                  formatter={(v, key) => [`${Math.round(v).toLocaleString()}원`, key === "benchmark" ? '벤치마크' : '평가금액']} 
                   labelFormatter={(v) => `진행 ${v}일차`}
                   contentStyle={{ backgroundColor: "#1e1e1e", border: "none", borderRadius: 8 }}
                 />
                 <Line type="monotone" dataKey="value" stroke="var(--primary-color)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="benchmark" stroke="#ba7517" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 16 }}>
+            <MetaCard label="Rolling 1Y Excess +" value={results.rolling1y?.positiveRatio != null ? `${Math.round(results.rolling1y.positiveRatio * 100)}%` : "-"} sub="벤치마크 초과 비율" />
+            <MetaCard label="Rolling 3Y Excess +" value={results.rolling3y?.positiveRatio != null ? `${Math.round(results.rolling3y.positiveRatio * 100)}%` : "-"} sub="벤치마크 초과 비율" />
+            <MetaCard label="Deflated Sharpe" value={results.rollingWf?.deflatedSharpe != null ? String(results.rollingWf.deflatedSharpe) : String(results.wf.deflatedSharpe ?? "-")} sub={`강건성 추정 · ${results.benchmarkSource === "actual" ? "실제 BM" : "프록시 BM"}`} />
           </div>
         </Card>
       )}
@@ -182,6 +217,14 @@ export default function ValidationPanel({ portfolio, accountType, onStrategyAppl
               </div>
             </div>
           </div>
+          {results.rollingWf && (
+            <div style={{ marginTop: 14, padding: 12, background: "var(--bg-card)", borderRadius: 8, border: "1px solid var(--border-glass)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Rolling Walk-Forward 요약</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.7 }}>
+                Fold 수 {results.rollingWf.foldCount} · 평균 robustness {results.rollingWf.robustness} · Deflated Sharpe {results.rollingWf.deflatedSharpe}
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

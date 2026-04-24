@@ -1,12 +1,18 @@
-﻿import { ZONES } from '../constants/index.js';
+import { ZONES } from '../constants/index.js';
 
-export function aggregateByAssetClass(holdings, total) {
+export function aggregateByAssetClass(holdings, total, options = {}) {
   const classMap = {};
+  const overrideTargets = options.targetWeights || {};
 
   holdings.forEach((h) => {
     const cls = h.cls || '기타';
     if (!classMap[cls]) {
-      classMap[cls] = { cls, amt: 0, costAmt: 0, target: Number(h.target) || 0 };
+      classMap[cls] = {
+        cls,
+        amt: 0,
+        costAmt: 0,
+        target: Number.isFinite(Number(overrideTargets[cls])) ? Number(overrideTargets[cls]) : Number(h.target) || 0,
+      };
     }
     classMap[cls].amt += Number(h.amt) || 0;
     classMap[cls].costAmt += Number(h.costAmt) || 0;
@@ -49,11 +55,11 @@ export function calculateCompositeSplit(vix, fearGreed = null, yieldSpread = nul
 }
 
 const EXPLICIT_RISK_CLASSES = new Set([
-  '미국주식', '선진국주식', '신흥국주식', '국내주식', '금', '원자재', '부동산리츠',
-  'US Stock', 'Developed Stock', 'Emerging Stock', 'KR Stock', 'Gold', 'Commodity', 'REIT',
+  '미국 주식', '국내 주식', '실물자산',
+  'US Stock', 'KR Stock', 'Real Assets',
 ]);
 
-function isRiskAssetClass(cls) {
+export function isRiskAssetClass(cls) {
   if (!cls) return false;
   if (EXPLICIT_RISK_CLASSES.has(cls)) return true;
 

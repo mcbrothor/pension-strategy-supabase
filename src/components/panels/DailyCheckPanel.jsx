@@ -23,6 +23,14 @@ export default function DailyCheckPanel({
   const s = getStrat(portfolio.strategy);
   const total = portfolio.total || 0;
 
+  const overlayTargets = portfolio.strategyOverlay?.targets || {};
+  const targetWeights = Object.keys(overlayTargets).length > 0
+    ? overlayTargets
+    : portfolio.holdings.reduce((acc, item) => {
+        if (Number(item.target) > 0) acc[item.cls] = Number(item.target);
+        return acc;
+      }, {});
+
   const holdings = portfolio.holdings.map(h => {
     const cur = total > 0 ? Math.round(h.amt / total * 1000) / 10 : 0;
     return { ...h, cur, diff: Math.round((cur - h.target) * 10) / 10 };
@@ -34,7 +42,9 @@ export default function DailyCheckPanel({
 
   // 리밸런싱 판단
   const timing = checkRebalanceTiming(portfolio.lastRebalDate, portfolio.rebalPeriod);
-  const assetClassResults = aggregateByAssetClass(holdings, total);
+  const assetClassResults = aggregateByAssetClass(holdings, total, {
+    targetWeights,
+  });
   const irpRiskRatio = calculateIRPRiskRatio(assetClassResults);
 
   // ActionTicket 생성 — 복합 시그널 전달
@@ -213,7 +223,7 @@ export default function DailyCheckPanel({
         </div>
         {signalsError && (
           <div style={{ background: "var(--alert-warn-bg)", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11, color: "var(--alert-warn-color)" }}>
-            시장 시그널 일부 조회 실패: {signalsError}. 표시되는 값은 마지막 성공값이거나 조회 가능한 무료 데이터만 반영된 값일 수 있습니다.
+            Market signal note: {signalsError}
           </div>
         )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
