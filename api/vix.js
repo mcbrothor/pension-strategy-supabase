@@ -1,4 +1,6 @@
-﻿const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real"
+﻿import { getCachedTokenFromDB, saveTokenToDB } from './_lib/token-storage.js';
+
+const API_BASE_URL = process.env.KIS_ACCOUNT_TYPE === "real"
   ? "https://openapi.koreainvestment.com:9443"
   : "https://openapivts.koreainvestment.com:29443";
 
@@ -6,8 +8,10 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 const STALE_GRACE_MS = 24 * 60 * 60 * 1000;
 const cache = globalThis.__VIX_CACHE__ || (globalThis.__VIX_CACHE__ = {});
 
+// 인스턴스 내 메모리 캐시 (워밍된 인스턴스에서는 DB 조회 생략)
 let cachedToken = null;
 let tokenExpiry = 0;
+let tokenPromise = null;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -40,25 +44,54 @@ async function fetchWithRetry(url, options = {}, retries = 2, retryDelayMs = 400
 
 async function getInternalToken() {
   const now = Date.now();
+
+  // 1. 인스턴스 메모리 캐시 (가장 빠름)
   if (cachedToken && now < tokenExpiry) return cachedToken;
+  if (tokenPromise) return tokenPromise;
 
-  const res = await fetchWithRetry(`${API_BASE_URL}/oauth2/tokenP`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "client_credentials",
-      appkey: process.env.KIS_APP_KEY,
-      appsecret: process.env.KIS_APP_SECRET,
-    }),
-    signal: AbortSignal.timeout(7000),
-  }, 1, 300);
+  tokenPromise = (async () => {
+    try {
+      // 2. Supabase DB 캐시 (콜드 스타트 대응 — 신규 발급 방지)
+      const dbResult = await getCachedTokenFromDB('kis');
+      if (dbResult) {
+        cachedToken = dbResult.token;
+        tokenExpiry = dbResult.expiry;
+        console.log("[KIS/VIX] Token loaded from DB cache.");
+        return cachedToken;
+      }
 
-  const data = await res.json();
-  if (!data.access_token) throw new Error(data.msg1 || data.error_description || "Failed to get KIS token");
+      // 3. DB에도 없거나 만료 — 신규 발급
+      console.log("[KIS/VIX] Requesting new token from KIS API...");
+      const res = await fetchWithRetry(`${API_BASE_URL}/oauth2/tokenP`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "client_credentials",
+          appkey: process.env.KIS_APP_KEY,
+          appsecret: process.env.KIS_APP_SECRET,
+        }),
+        signal: AbortSignal.timeout(7000),
+      }, 1, 300);
 
-  cachedToken = data.access_token;
-  tokenExpiry = now + (data.expires_in - 60) * 1000;
-  return cachedToken;
+      const data = await res.json();
+      if (!data.access_token) throw new Error(data.msg1 || data.error_description || "Failed to get KIS token");
+
+      cachedToken = data.access_token;
+      tokenExpiry = now + (data.expires_in - 60) * 1000;
+
+      // 4. DB에 저장해 다른 인스턴스와 공유
+      await saveTokenToDB('kis', data.access_token, data.expires_in);
+
+      return cachedToken;
+    } catch (e) {
+      console.error("[KIS/VIX] Token error:", e.message);
+      throw e;
+    } finally {
+      tokenPromise = null;
+    }
+  })();
+
+  return tokenPromise;
 }
 
 async function fetchFromKis() {
